@@ -72,15 +72,7 @@ LinkedIn sign-ins last about 60 days. A week before expiry, the agent adds a rem
 
 ### 5. Posting dashboard
 
-The dashboard is a web page that lives inside the Google Sheet. On it she can:
-
-- read and edit each draft
-- pick a date and time and click **Schedule**
-- click **Post now**
-- click **Reject**
-- click **Write today's draft**
-
-Every 5 minutes it checks for posts whose time has come and asks GitHub to publish them.
+The dashboard is a web page that lives inside the Google Sheet. People sign in with a username and password. They can read and edit each draft, pick a date and time and click **Schedule**, click **Post now** or **Reject**, and write today's draft on demand. Every 5 minutes it checks for posts whose time has come and asks GitHub to publish them.
 
 1. **Make a GitHub token.** On GitHub, open **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**. Under **Repository access**, choose only this repository. Under **Permissions**, set **Actions** to **Read and write**. Copy the token.
 2. **Add the code.** In the Google Sheet, open **Extensions → Apps Script**.
@@ -89,13 +81,14 @@ Every 5 minutes it checks for posts whose time has come and asks GitHub to publi
    - Save.
 3. **Save the token.** Open **Project Settings** (the gear icon). Under **Script properties**, add `GITHUB_TOKEN` with the token as its value.
 4. **Run the setup once.** Back in the editor, pick `install` in the function dropdown and click **Run**, then allow the permissions Google asks for. If Google says the app isn't verified, click **Advanced → Go to project**.
-5. **Publish the page.** Click **Deploy → New deployment**, choose the **Web app** type, and set:
-   - **Execute as:** User accessing the web app
-   - **Who has access:** Anyone with a Google account
+5. **Create logins.** Reload the Google Sheet. A **Dashboard** menu appears. Choose **Dashboard → Add or change a login** and enter a username and a password of at least 10 characters. Do this once for each person. The same menu can remove a login.
+6. **Publish the page.** Click **Deploy → New deployment**, choose the **Web app** type, and set:
+   - **Execute as:** Me
+   - **Who has access:** Anyone
 
-   Click **Deploy** and copy the **Web app URL**. Bookmark it and send it to her.
+   Click **Deploy** and copy the **Web app URL**. Bookmark it and share it with the people who have logins.
 
-Only people the sheet is shared with can use the dashboard; anyone else gets an error. If you change the code later, use **Deploy → Manage deployments → Edit → New version** so the same URL keeps working.
+The username and password are the only lock on the page, so use a strong password. After 5 wrong passwords, a username is locked for 15 minutes. Sessions last 6 hours. Removing a login signs that person out at once. Passwords are stored as salted hashes, never as plain text. If you change the code later, use **Deploy → Manage deployments → Edit → New version** so the same URL keeps working.
 
 The **Post at** time is IST. If it's left empty, an approved post goes out within 5 minutes. The hourly GitHub run (13:15–19:15 IST) stays on as a backup, and the one-post-a-day limit still applies.
 
