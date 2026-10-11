@@ -26,7 +26,7 @@ def test_gemini_parses_json_reply(monkeypatch):
     monkeypatch.setattr(llm.requests, "post", fake_post)
     out = llm.GeminiLLM("key").generate_json("sys", "prompt", {"type": "object"})
     assert out == {"topic": "x"}
-    assert "gemini-2.5-flash" in sent["url"]
+    assert "gemini-3.8-flash" in sent["url"]
     assert sent["headers"]["x-goog-api-key"] == "key"
     assert sent["body"]["generationConfig"]["responseMimeType"] == "application/json"
 

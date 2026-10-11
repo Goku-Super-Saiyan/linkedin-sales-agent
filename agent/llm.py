@@ -15,7 +15,7 @@ import requests
 from .config import Settings
 
 DEFAULT_MODELS = {
-    "gemini": "gemini-2.5-flash",
+    "gemini": "gemini-3.8-flash",
     "claude": "claude-opus-5-5",
 }
 
