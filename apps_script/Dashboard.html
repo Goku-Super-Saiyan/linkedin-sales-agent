@@ -85,6 +85,14 @@
     .notes { margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: var(--amber-soft); color: var(--amber); font-size: 13px; }
     .meta { margin-top: 10px; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
     .meta a { color: var(--blue); font-weight: 600; text-decoration: none; }
+    .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: grid; place-items: center; padding: 16px; z-index: 4; }
+    .modal { width: 100%; max-width: 420px; background: var(--card); border-radius: 14px; box-shadow: var(--shadow); padding: 24px; }
+    .modal h2 { margin: 0 0 4px; font-size: 20px; }
+    .modal p { margin: 0 0 18px; color: var(--muted); font-size: 14px; }
+    .modal .field input { max-width: 180px; }
+    .check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; margin: 4px 0 18px; }
+    .check input { margin-top: 3px; }
+    .modal .actions { justify-content: flex-end; }
     .empty { text-align: center; color: var(--muted); padding: 48px 16px; background: var(--card); border-radius: 12px; }
     #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: #fff;
       padding: 10px 16px; border-radius: 10px; max-width: calc(100% - 32px); box-shadow: var(--shadow); z-index: 3; }
@@ -117,7 +125,8 @@
       <div class="bar">
         <div class="brand"><div class="logo">in</div><div>LinkedIn Posts<small>360 Degree Cloud</small></div></div>
         <span class="who" id="who"></span>
-        <button class="btn" id="draftBtn"><span class="long">Write today's draft</span><span class="short">New draft</span></button>
+        <button class="btn" id="draftBtn"><span class="long">Write a new draft</span><span class="short">New draft</span></button>
+        <button class="btn quiet" id="settingsBtn" title="Settings">⚙<span class="long"> Settings</span></button>
         <button class="btn quiet" id="logoutBtn">Sign out</button>
       </div>
     </header>
@@ -134,6 +143,19 @@
       <p class="hint" id="hint"></p>
       <div id="list"></div>
     </main>
+  </div>
+  <div class="modal-bg" id="settingsView" hidden>
+    <form class="modal" id="settingsForm">
+      <h2>Posting settings</h2>
+      <p>Approved posts without their own time go out at the default time, one slot per day up to the daily limit.</p>
+      <label class="field"><span>Default post time (IST)</span><input type="time" id="setTime"></label>
+      <label class="field"><span>Posts per day, at most</span><input type="number" id="setMax" min="1" max="5" required></label>
+      <label class="check"><input type="checkbox" id="setApply"> Also move posts that are already scheduled to the new time</label>
+      <div class="actions">
+        <button type="button" class="btn quiet" id="settingsCancel">Cancel</button>
+        <button class="btn primary" id="settingsSave">Save</button>
+      </div>
+    </form>
   </div>
   <div id="toast" hidden></div>
 
@@ -236,8 +258,10 @@
       document.getElementById('statNext').textContent = next ? 'Next: ' + nice(next) : 'Scheduled';
       document.getElementById('statPublished').textContent =
         res.posts.filter(function (p) { return p.status === 'Published' && p.publishedAt.indexOf(month) === 0; }).length;
-      document.getElementById('hint').textContent = 'Times are IST (now ' + nice(res.now) + '). Scheduled posts go out within 5 minutes of their time, at most ' +
-        res.maxPerDay + ' post' + (res.maxPerDay > 1 ? 's' : '') + ' a day.';
+      const st = res.settings;
+      document.getElementById('hint').textContent = 'Times are IST (now ' + nice(res.now) + '). ' +
+        (st.defaultTime ? 'Approved posts go out at ' + clock(st.defaultTime) + ' by default' : 'Approved posts go out right away by default') +
+        ', at most ' + st.maxPerDay + ' a day. Change this in Settings.';
 
       const tabs = document.getElementById('tabs');
       tabs.innerHTML = '';
@@ -254,7 +278,7 @@
       const shown = res.posts.filter(function (p) { return tab === 'all' || groupOf(p) === tab; });
       if (!shown.length) {
         list.innerHTML = '<div class="empty">' + {
-          review: 'Nothing to review. The next draft arrives at 08:00 IST, or click "Write today\'s draft".',
+          review: 'Nothing to review. The next draft arrives at 08:00 IST, or click "Write a new draft".',
           scheduled: 'Nothing scheduled.', published: 'Nothing published yet.', all: 'No posts yet.' }[tab] + '</div>';
         return;
       }
@@ -283,7 +307,8 @@
         '<div class="editor"><textarea ' + (locked ? 'readonly' : '') + '></textarea><div class="count"></div></div>' +
         (locked ? '' :
           '<div class="when"><label>Post at</label><input type="datetime-local" value="' + esc(p.postAt.replace(' ', 'T')) + '">' +
-          '<span class="note">Leave empty to post as soon as you approve.</span></div>' +
+          '<span class="note">' + (data.nextSlot ? 'Leave empty to use the next free slot: ' + esc(nice(data.nextSlot)) + '.'
+            : 'Leave empty to post as soon as you approve.') + '</span></div>' +
           '<div class="actions">' +
             '<button class="btn primary" data-act="schedule"></button>' +
             '<button class="btn" data-act="now">Post now</button>' +
@@ -328,11 +353,17 @@
       if (action === 'now' && !confirm('Post this to LinkedIn now?')) return;
       el.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
       const messages = {
-        schedule: postAt ? 'Scheduled for ' + nice(postAt) + '.' : 'Approved. It will go out in the next few minutes.',
         now: 'Posting now. Refresh in a minute to see the link.',
         save: 'Saved.', reject: 'Rejected.', pending: 'Moved back to review.',
       };
-      const done = function () { toast(messages[action]); load(); };
+      const done = function (when) {
+        if (action === 'schedule') {
+          toast(when && when > data.now ? 'Scheduled for ' + nice(when) + '.' : 'Approved. It will go out in the next few minutes.');
+        } else {
+          toast(messages[action]);
+        }
+        load();
+      };
       const failed = function (msg) { fail(msg); load(); };
       if (action === 'schedule') call('schedulePost', [p.id, text, postAt], done, failed);
       if (action === 'now') call('postNow', [p.id, text], done, failed);
@@ -345,11 +376,40 @@
     document.getElementById('draftBtn').onclick = function () {
       const btn = this;
       btn.disabled = true;
-      call('draftNow', [], function () { toast('Writing today\'s draft. Refresh in about a minute.'); btn.disabled = false; },
+      call('draftNow', [], function () { toast('Writing a new draft. Refresh in about a minute.'); btn.disabled = false; },
         function (msg) { fail(msg); btn.disabled = false; });
     };
 
+    // ---- Settings ----
+
+    document.getElementById('settingsBtn').onclick = function () {
+      document.getElementById('setTime').value = data.settings.defaultTime;
+      document.getElementById('setMax').value = data.settings.maxPerDay;
+      document.getElementById('setApply').checked = false;
+      document.getElementById('settingsView').hidden = false;
+    };
+    document.getElementById('settingsCancel').onclick = function () {
+      document.getElementById('settingsView').hidden = true;
+    };
+    document.getElementById('settingsForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      const btn = document.getElementById('settingsSave');
+      btn.disabled = true;
+      call('saveSettings', [document.getElementById('setTime').value, document.getElementById('setMax').value,
+        document.getElementById('setApply').checked], function (res) {
+        btn.disabled = false;
+        document.getElementById('settingsView').hidden = true;
+        toast('Settings saved.' + (res.moved ? ' Moved ' + res.moved + ' scheduled post' + (res.moved > 1 ? 's' : '') + '.' : ''));
+        load();
+      }, function (msg) { btn.disabled = false; fail(msg); });
+    });
+
     // ---- Helpers ----
+
+    function clock(hhmm) {
+      const h = Number(hhmm.slice(0, 2));
+      return ((h % 12) || 12) + ':' + hhmm.slice(3, 5) + (h < 12 ? ' am' : ' pm');
+    }
 
     function nice(s) {
       if (!s) return '';

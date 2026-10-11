@@ -11,7 +11,7 @@ on:
       command:
         description: What to run
         type: choice
-        options: [draft, publish]
+        options: [draft, new-draft, publish]
         default: draft
 
 concurrency:

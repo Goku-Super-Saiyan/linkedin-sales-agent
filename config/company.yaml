@@ -78,3 +78,6 @@ content:
 schedule:
   timezone: Asia/Kolkata
   max_posts_per_day: 1
+  # Approved posts with no time of their own go out at this time (IST). Empty means right away.
+  # The dashboard's Settings panel overrides both values.
+  default_post_time: "10:00"

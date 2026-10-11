@@ -63,10 +63,16 @@ class Store(Protocol):
 
     def update_post(self, post_id: str, **changes: str) -> None: ...
 
+    def get_settings(self) -> dict[str, str]: ...
+
 
 class LocalStore:
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, settings: dict[str, str] | None = None):
         self.path = Path(path)
+        self.settings = settings or {}
+
+    def get_settings(self) -> dict[str, str]:
+        return dict(self.settings)
 
     def _load(self) -> list[dict]:
         if not self.path.exists():
@@ -97,6 +103,7 @@ class LocalStore:
 
 class SheetStore:
     TAB = "Posts"
+    SETTINGS_TAB = "Settings"
 
     def __init__(self, sheet_id: str, service_account_json: str):
         import gspread
@@ -128,6 +135,16 @@ class SheetStore:
                 showCustomUi=True,
             )
             return ws
+
+    def get_settings(self) -> dict[str, str]:
+        """Key/value rows from the Settings tab, which the dashboard writes. Empty if there is none."""
+        import gspread
+
+        try:
+            rows = self.spreadsheet.worksheet(self.SETTINGS_TAB).get_all_values()
+        except gspread.WorksheetNotFound:
+            return {}
+        return {r[0].strip(): r[1].strip() for r in rows[1:] if len(r) >= 2 and r[0].strip()}
 
     def _rows(self) -> list[list[str]]:
         return self.ws.get_all_values()[1:]
