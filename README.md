@@ -6,7 +6,7 @@ An assistant for 360 Degree Cloud's business development team on LinkedIn.
 
 1. **08:00 IST:** the agent reads fresh Salesforce and AI news, picks the most useful story, and writes a post in her voice. It adds the post to a Google Sheet as **Pending review**.
 2. **Around 13:00 IST:** she reads the draft in the sheet, edits the text if she wants, and sets **Status** to **Approved** (or **Rejected**).
-3. **Hourly, 13:15–19:15 IST:** the agent publishes approved posts to her LinkedIn profile, at most one a day, and adds the post link to the sheet.
+3. **Hourly, 13:15–19:15 IST, or right away with [instant posting](#5-instant-posting-optional):** the agent publishes approved posts to her LinkedIn profile, at most one a day, and adds the post link to the sheet.
 
 Nothing is posted without her approval. Until LinkedIn is connected, approved posts are marked **Post manually** so she can copy and paste them.
 
@@ -67,6 +67,17 @@ This step lets the agent publish by itself. Until it's done, everything else sti
 5. The script prints three values. Save them as the secrets `LINKEDIN_ACCESS_TOKEN`, `LINKEDIN_PERSON_URN` and `LINKEDIN_TOKEN_EXPIRES_ON`.
 
 LinkedIn sign-ins last about 60 days. A week before expiry, the agent adds a reminder in the sheet's Notes column. Repeat step 4 and update the three secrets.
+
+### 5. Instant posting (optional)
+
+By default, approved posts go out at the next hourly run (13:15–19:15 IST). To post as soon as she sets **Approved**:
+
+1. On GitHub, open **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**. Under **Repository access**, choose only this repository. Under **Permissions**, set **Actions** to **Read and write**. Copy the token.
+2. In the Google Sheet, open **Extensions → Apps Script**. Replace the code with the contents of [`scripts/approve_trigger.gs`](scripts/approve_trigger.gs) and save.
+3. In Apps Script, open **Project Settings** (the gear icon). Under **Script properties**, add `GITHUB_TOKEN` with the token as its value.
+4. Back in the editor, pick `install` in the function dropdown and click **Run**. Google asks for permission; allow it. You may need to click **Advanced → Go to project** first.
+
+Now, setting **Status** to **Approved** starts publishing within about a minute. The hourly run stays on as a backup, and the one-post-a-day limit still applies.
 
 ### Switching to a paid AI model (optional)
 
