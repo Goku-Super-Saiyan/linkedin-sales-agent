@@ -54,12 +54,12 @@ def test_gemini_retries_timeouts_and_busy_replies(monkeypatch):
     assert llm.GeminiLLM("key", retry_wait=0).generate_json("s", "p", {}) == {"ok": 1}
 
 
-def test_gemini_gives_up_after_three_timeouts(monkeypatch):
+def test_gemini_gives_up_after_five_timeouts(monkeypatch):
     def always_slow(*a, **k):
         raise llm.requests.Timeout("read timed out")
 
     monkeypatch.setattr(llm.requests, "post", always_slow)
-    with pytest.raises(llm.LLMError, match="3 tries"):
+    with pytest.raises(llm.LLMError, match="5 tries"):
         llm.GeminiLLM("key", retry_wait=0).generate_json("s", "p", {})
 
 

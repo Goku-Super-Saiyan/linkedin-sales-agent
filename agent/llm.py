@@ -39,9 +39,10 @@ class GeminiLLM:
     name = "gemini"
     URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-    # The free tier sometimes stalls or is briefly busy; these are worth another try.
+    # The free tier sometimes stalls or is busy for a minute or two; these are worth another try.
+    # Waits grow 10s, 20s, 30s, 40s, so a busy spell of up to ~100s is ridden out.
     RETRY_STATUS = {429, 500, 502, 503, 504}
-    ATTEMPTS = 3
+    ATTEMPTS = 5
 
     def __init__(self, api_key: str, model: str | None = None, timeout: int = 90, retry_wait: float = 10):
         self.api_key = api_key
