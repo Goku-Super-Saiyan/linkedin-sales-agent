@@ -127,7 +127,7 @@ def draft_daily_post(
         topic=draft.topic,
         text=draft.post,
         sources="\n".join(draft.source_urls),
-        notes=_notes(settings, draft.evergreen, now),
+        notes=" ".join(filter(None, [_notes(settings, draft.evergreen, now), *draft.style_warnings])),
     )
     store.add_post(row)
     log.info("Saved draft %s for review: %s", row.id, row.topic)

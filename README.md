@@ -105,6 +105,9 @@ To pin a specific model, set the variable `LLM_MODEL`.
 
 ## Changing what it writes about
 
+Every draft is checked for things that make posts read like AI: a question as the first line, words like "leverage" or "seamless", reveal phrases like "The result?", and too many em dashes. The agent asks the AI to rewrite up to twice. If a small problem is still left, the draft is saved anyway and the Notes column says what to fix. These rules are adapted from [linkedin-skills](https://github.com/sergebulaev/linkedin-skills) (MIT licence) and live in `agent/style.py`.
+
+
 Edit [`config/company.yaml`](config/company.yaml). It holds the company description, tone, topics to avoid, keywords, news feeds and fallback topics.
 
 ## Development
