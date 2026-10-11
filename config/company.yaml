@@ -1,0 +1,80 @@
+# Everything the agent knows about the company and how to write.
+# Edit this file to change topics, tone or news sources; no code changes needed.
+
+company:
+  name: 360 Degree Cloud
+  description: >
+    Salesforce Summit Partner helping businesses get more from Salesforce through
+    implementation, customization, integration, automation and AI.
+  offerings:
+    - Salesforce implementation, customization and integration
+    - Salesforce automation and Agentforce / AI solutions
+    - AI-powered automation for business processes
+    - Full-stack and website development
+    - "AppExchange products: 360 SMS, 360 SmartTalk, 360 Mass Mailer, 360 CTI"
+  # Never mention these (not finalized yet).
+  excluded_topics:
+    - Zoho
+    - HubSpot
+
+voice:
+  tone: professional, conversational, concise, helpful, consultative, not pushy
+  language: simple English
+  rules:
+    - Lead with one useful insight from the news, then a practical takeaway for business leaders.
+    - Mention 360 Degree Cloud at most once, as a soft line near the end. No hard sell.
+    - Never invent statistics, customer names, quotes or results. Only use facts from the source articles.
+    - 120 to 220 words. Short paragraphs. End with a question to invite comments.
+    - 3 to 5 relevant hashtags on the last line. At most 2 emojis.
+  example_posts:
+    - >
+      Are you looking to improve your Salesforce CRM and streamline your business processes?
+      360 Degree Cloud helps businesses with Salesforce implementation, customization,
+      integration, and automation to improve team productivity and customer experience.
+    - >
+      AI is changing the way businesses work. At 360 Degree Cloud, we help businesses explore
+      AI-powered solutions and intelligent automation to reduce manual tasks, improve
+      efficiency, and deliver better customer experiences.
+
+audience:
+  # Who the posts should speak to (same as the lead ICP).
+  industries: [healthcare, finance, e-commerce, SaaS, IT, professional services]
+  company_size: 50-500 employees
+  regions: [United States, United Kingdom, India]
+  roles: [CEO, Founder, CTO, COO, RevOps, IT leaders, Salesforce decision-makers]
+
+content:
+  # News is only used if published within this many days.
+  max_age_days: 4
+  # Articles that mention these words are preferred.
+  keywords:
+    - salesforce
+    - agentforce
+    - crm
+    - einstein
+    - slack
+    - mulesoft
+    - tableau
+    - data cloud
+    - ai agent
+    - generative ai
+    - automation
+    - llm
+  feeds:
+    - https://www.salesforce.com/news/feed/
+    - https://www.salesforceben.com/feed/
+    - https://developer.salesforce.com/blogs/feed
+    - https://admin.salesforce.com/feed
+    - https://techcrunch.com/category/artificial-intelligence/feed/
+    - https://venturebeat.com/category/ai/feed/
+  # Used when no fresh news is found, so there is still a post to review.
+  evergreen_topics:
+    - Signs your business has outgrown its current CRM setup
+    - Simple Salesforce automations that save sales teams hours every week
+    - Where AI agents help customer service teams today, and where they don't yet
+    - Questions to ask before starting a Salesforce integration project
+    - How to measure whether your CRM is actually being used by the team
+
+schedule:
+  timezone: Asia/Kolkata
+  max_posts_per_day: 1
