@@ -4,9 +4,11 @@ from zoneinfo import ZoneInfo
 
 from agent import linkedin
 from agent.config import load_profile
-from agent.daily_post import draft_daily_post, publish_approved
+from agent.daily_post import accounts, draft_daily_post, picture_every, publish_approved, wants_picture
 from agent.feeds import NewsItem
 from agent.store import (
+    COMPANY,
+    PROFILE,
     APPROVED,
     FAILED,
     PENDING,
@@ -98,7 +100,7 @@ def test_publish_posts_approved_row(settings, profile, store):
     store.add_post(approved())
     calls = []
 
-    def fake_publish(token, urn, text):
+    def fake_publish(token, urn, text, image):
         calls.append((token, urn, store.list_posts()[0].status))
         return "urn:li:share:1"
 
@@ -227,3 +229,77 @@ def test_over_limit_moves_to_tomorrow_at_default_time(settings, profile, tmp_pat
     assert two.status == APPROVED
     assert two.post_at == "2026-10-12 09:15"
     assert "tomorrow" in two.notes
+
+
+# ---- Pictures and the company page ----
+
+
+def test_every_third_post_gets_a_picture(settings, profile, store):
+    rows = []
+    for n in range(4):
+        url = f"https://ex.com/{n}"
+        llm = FakeLLM({**reply(url), "card_line": "Agentforce takes routine cases"})
+        rows.append(draft_daily_post(settings, profile, store, llm, fetch=lambda _, u=url: [news(u)], now=NOW + timedelta(days=n)))
+    assert [bool(r.picture) for r in rows] == [False, False, True, False]
+    assert rows[2].picture == "Agentforce takes routine cases"
+
+
+def test_picture_setting_from_the_sheet(settings, profile, tmp_path):
+    from agent.store import LocalStore
+
+    store = LocalStore(tmp_path / "p.json", settings={"picture_every": "1"})
+    row = draft_daily_post(settings, profile, store, FakeLLM({**reply(), "card_line": "Hi"}), fetch=lambda _: [news()], now=NOW)
+    assert row.picture == "Hi"
+    off = LocalStore(tmp_path / "q.json", settings={"picture_every": "0"})
+    assert wants_picture([], PROFILE, picture_every(profile, off)) is False
+
+
+def test_company_draft_uses_company_voice_and_its_own_id(settings, profile, store):
+    llm = FakeLLM(reply())
+    draft_daily_post(settings, profile, store, FakeLLM(reply("https://ex.com/b")), fetch=lambda _: [news("https://ex.com/b")], now=NOW)
+    row = draft_daily_post(settings, profile, store, llm, fetch=lambda _: [news()], now=NOW, account=COMPANY)
+    assert row.id == "2026-10-11-company" and row.account == COMPANY
+    assert 'using "we"' in llm.prompts[0][0]
+    assert "company page isn't connected" in row.notes.lower()
+    # The daily run doesn't add a second company draft, but the dashboard button does.
+    assert draft_daily_post(settings, profile, store, FakeLLM(), fetch=lambda _: [news()], now=NOW, account=COMPANY) is None
+    extra = draft_daily_post(settings, profile, store, FakeLLM(reply()), fetch=lambda _: [], now=NOW, account=COMPANY, manual=True)
+    assert extra.id == "2026-10-11-company-080000"
+
+
+def test_accounts_follow_the_company_page_switch(profile, tmp_path):
+    from agent.store import LocalStore
+
+    profile["content"]["company_page"] = False
+    assert accounts(profile) == [PROFILE]
+    profile["content"]["company_page"] = True
+    assert accounts(profile) == [PROFILE, COMPANY]
+    # The dashboard's setting wins.
+    assert accounts(profile, LocalStore(tmp_path / "x.json", settings={"company_page": "no"})) == [PROFILE]
+
+
+def test_company_post_waits_for_manual_posting_until_connected(settings, profile, store):
+    row = approved("c1")
+    row.account = COMPANY
+    store.add_post(row)
+    publish_approved(settings, profile, store, publish=lambda *a: 1 / 0, now=NOW)
+    assert store.list_posts()[0].status == POST_MANUALLY
+
+
+def test_company_post_uses_company_token_and_has_its_own_daily_limit(settings, profile, store):
+    settings.linkedin_org_urn = "urn:li:organization:360"
+    settings.linkedin_org_access_token = "org-token"
+    done = approved("mine")
+    done.status, done.published_at = PUBLISHED, "2026-10-11 07:00"
+    store.add_post(done)
+    row = approved("c1")
+    row.account, row.picture, row.notes = COMPANY, "Card line", "Plan: Sunday, Point of view. Hook: X."
+    store.add_post(row)
+    calls = []
+
+    def fake_publish(token, urn, text, image):
+        calls.append((token, urn, image[:8] if image else None))
+        return "urn:li:share:7"
+
+    assert publish_approved(settings, profile, store, publish=fake_publish, now=NOW) == ["urn:li:share:7"]
+    assert calls == [("org-token", "urn:li:organization:360", b"\x89PNG\r\n\x1a\n")]

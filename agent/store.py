@@ -18,6 +18,11 @@ PUBLISHED = "Published"
 FAILED = "Failed"
 POST_MANUALLY = "Post manually"
 
+# Where a post goes. Rows from before this column existed are her profile.
+PROFILE = "Her profile"
+COMPANY = "Company page"
+ACCOUNTS = [PROFILE, COMPANY]
+
 # What she can pick from the Status dropdown.
 STATUS_CHOICES = [PENDING, APPROVED, REJECTED, POST_MANUALLY, PUBLISHING, PUBLISHED, FAILED]
 
@@ -35,9 +40,16 @@ class PostRow:
     published_at: str = ""
     # When to publish, "YYYY-MM-DD HH:MM" in the schedule's timezone. Empty means as soon as approved.
     post_at: str = ""
+    account: str = PROFILE
+    # The line shown on the post's picture card. Empty means the post has no picture.
+    picture: str = ""
 
     def is_status(self, status: str) -> bool:
         return self.status.strip().lower() == status.lower()
+
+    @property
+    def for_company(self) -> bool:
+        return self.account.strip().lower() == COMPANY.lower()
 
 
 # Sheet header for each PostRow field, in column order.
@@ -52,6 +64,8 @@ HEADERS = {
     "linkedin_link": "LinkedIn link",
     "published_at": "Published at",
     "post_at": "Post at",
+    "account": "Account",
+    "picture": "Picture",
 }
 FIELD_NAMES = [f.name for f in fields(PostRow)]
 
@@ -84,7 +98,7 @@ class LocalStore:
         self.path.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def list_posts(self) -> list[PostRow]:
-        return [PostRow(**r) for r in self._load()]
+        return [PostRow(**{**r, "account": r.get("account") or PROFILE}) for r in self._load()]
 
     def add_post(self, row: PostRow) -> None:
         rows = self._load()
@@ -154,7 +168,9 @@ class SheetStore:
         for values in self._rows():
             values = (values + [""] * len(FIELD_NAMES))[: len(FIELD_NAMES)]
             if values[0]:
-                posts.append(PostRow(**dict(zip(FIELD_NAMES, values))))
+                row = dict(zip(FIELD_NAMES, values))
+                row["account"] = row["account"] or PROFILE
+                posts.append(PostRow(**row))
         return posts
 
     def add_post(self, row: PostRow) -> None:

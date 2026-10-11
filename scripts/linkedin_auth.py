@@ -8,10 +8,17 @@ run this again before it expires.
 
 The developer app must have the redirect URL http://localhost:8765/callback and the
 products "Share on LinkedIn" and "Sign In with LinkedIn using OpenID Connect".
+
+For the company page, a page admin runs it with --company and the page's number (from the
+page's admin URL, linkedin.com/company/<NUMBER>/admin). That app needs the Community
+Management API product, which LinkedIn has to approve first:
+
+    LINKEDIN_CLIENT_ID=... LINKEDIN_CLIENT_SECRET=... python scripts/linkedin_auth.py --company 12345
 """
 
 from __future__ import annotations
 
+import argparse
 import http.server
 import os
 import secrets
@@ -24,6 +31,7 @@ import requests
 
 REDIRECT_URI = "http://localhost:8765/callback"
 SCOPES = "openid profile w_member_social"
+COMPANY_SCOPES = "w_organization_social"
 AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization"
 TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
 USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
@@ -56,6 +64,12 @@ def wait_for_code(expected_state: str) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--company", metavar="PAGE_NUMBER", help="Sign in to post as this company page")
+    args = parser.parse_args()
+    if args.company and not args.company.isdigit():
+        sys.exit("--company takes the page's number, from linkedin.com/company/<NUMBER>/admin")
+
     client_id = os.environ.get("LINKEDIN_CLIENT_ID")
     client_secret = os.environ.get("LINKEDIN_CLIENT_SECRET")
     if not (client_id and client_secret):
@@ -67,7 +81,7 @@ def main() -> None:
             "response_type": "code",
             "client_id": client_id,
             "redirect_uri": REDIRECT_URI,
-            "scope": SCOPES,
+            "scope": COMPANY_SCOPES if args.company else SCOPES,
             "state": state,
         }
     )
@@ -90,6 +104,13 @@ def main() -> None:
     token_data = token.json()
     access_token = token_data["access_token"]
     expires_on = date.today() + timedelta(seconds=int(token_data.get("expires_in", 0)))
+
+    if args.company:
+        print("\nSave these as GitHub repository secrets:\n")
+        print(f"LINKEDIN_ORG_ACCESS_TOKEN = {access_token}")
+        print(f"LINKEDIN_ORG_URN = urn:li:organization:{args.company}")
+        print(f"LINKEDIN_ORG_TOKEN_EXPIRES_ON = {expires_on.isoformat()}")
+        return
 
     me = requests.get(USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}, timeout=30)
     me.raise_for_status()
