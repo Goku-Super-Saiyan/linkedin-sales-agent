@@ -39,10 +39,20 @@ def main(argv: list[str] | None = None) -> int:
             targets, manual = chosen[args.account], True
         else:
             targets, manual = accounts(profile, store), False
+        failed = []
         for account in targets:
-            row = draft_daily_post(settings, profile, store, llm, manual=manual, account=account)
+            # One account failing (say, the AI is busy) shouldn't cost the other its draft.
+            try:
+                row = draft_daily_post(settings, profile, store, llm, manual=manual, account=account)
+            except Exception:
+                logging.exception("Could not write the draft for %s", account)
+                failed.append(account)
+                continue
             if row:
                 print(f"\nDraft saved for review, {account} ({row.topic}):\n\n{row.text}\n")
+        if failed:
+            print(f"No draft for: {', '.join(failed)}. See the error above.")
+            return 1
     else:
         published = publish_approved(settings, profile, store)
         print(f"Published {len(published)} post(s).")
