@@ -5,8 +5,8 @@ An assistant for 360 Degree Cloud's business development team on LinkedIn.
 **Built so far: workflow 1, the daily post.**
 
 1. **08:00 IST:** the agent reads fresh Salesforce and AI news, picks the most useful story, and writes a post in her voice. It adds the post to a Google Sheet as **Pending review**.
-2. **Around 13:00 IST:** she reads the draft in the sheet, edits the text if she wants, and sets **Status** to **Approved** (or **Rejected**).
-3. **Hourly, 13:15–19:15 IST, or right away with [instant posting](#5-instant-posting-optional):** the agent publishes approved posts to her LinkedIn profile, at most one a day, and adds the post link to the sheet.
+2. **When she's ready:** she opens the [posting dashboard](#5-posting-dashboard), edits the text if she wants, picks a time and clicks **Schedule** or **Post now**. She can also do this in the sheet itself.
+3. **At the time she picks:** the agent publishes approved posts to her LinkedIn profile, at most one a day, and adds the post link to the sheet.
 
 Nothing is posted without her approval. Until LinkedIn is connected, approved posts are marked **Post manually** so she can copy and paste them.
 
@@ -23,6 +23,8 @@ Each row in the **Posts** tab is one draft:
 | Sources | The news articles it is based on |
 | Notes | Messages from the agent, for example a failure reason or a sign-in reminder |
 | LinkedIn link | Link to the published post |
+| Published at | When it went out |
+| Post at | When to publish, IST, for example `2026-10-12 10:30`. Empty means as soon as it's approved. |
 
 If a row says **Failed**, the note says why. Fix the problem and set Status back to **Approved**.
 
@@ -68,16 +70,27 @@ This step lets the agent publish by itself. Until it's done, everything else sti
 
 LinkedIn sign-ins last about 60 days. A week before expiry, the agent adds a reminder in the sheet's Notes column. Repeat step 4 and update the three secrets.
 
-### 5. Instant posting (optional)
+### 5. Posting dashboard
 
-By default, approved posts go out at the next hourly run (13:15–19:15 IST). To post as soon as she sets **Approved**:
+The dashboard is a web page that lives inside the Google Sheet. People sign in with a username and password. They can read and edit each draft, pick a date and time and click **Schedule**, click **Post now** or **Reject**, and write today's draft on demand. Every 5 minutes it checks for posts whose time has come and asks GitHub to publish them.
 
-1. On GitHub, open **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**. Under **Repository access**, choose only this repository. Under **Permissions**, set **Actions** to **Read and write**. Copy the token.
-2. In the Google Sheet, open **Extensions → Apps Script**. Replace the code with the contents of [`scripts/approve_trigger.gs`](scripts/approve_trigger.gs) and save.
-3. In Apps Script, open **Project Settings** (the gear icon). Under **Script properties**, add `GITHUB_TOKEN` with the token as its value.
-4. Back in the editor, pick `install` in the function dropdown and click **Run**. Google asks for permission; allow it. You may need to click **Advanced → Go to project** first.
+1. **Make a GitHub token.** On GitHub, open **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**. Under **Repository access**, choose only this repository. Under **Permissions**, set **Actions** to **Read and write**. Copy the token.
+2. **Add the code.** In the Google Sheet, open **Extensions → Apps Script**.
+   - Replace the contents of `Code.gs` with [`apps_script/Code.gs`](apps_script/Code.gs).
+   - Click **+ → HTML**, name the file `Dashboard`, and paste in [`apps_script/Dashboard.html`](apps_script/Dashboard.html).
+   - Save.
+3. **Save the token.** Open **Project Settings** (the gear icon). Under **Script properties**, add `GITHUB_TOKEN` with the token as its value.
+4. **Run the setup once.** Back in the editor, pick `install` in the function dropdown and click **Run**, then allow the permissions Google asks for. If Google says the app isn't verified, click **Advanced → Go to project**.
+5. **Create logins.** Reload the Google Sheet. A **Dashboard** menu appears. Choose **Dashboard → Add or change a login** and enter a username and a password of at least 10 characters. Do this once for each person. The same menu can remove a login.
+6. **Publish the page.** Click **Deploy → New deployment**, choose the **Web app** type, and set:
+   - **Execute as:** Me
+   - **Who has access:** Anyone
 
-Now, setting **Status** to **Approved** starts publishing within about a minute. The hourly run stays on as a backup, and the one-post-a-day limit still applies.
+   Click **Deploy** and copy the **Web app URL**. Bookmark it and share it with the people who have logins.
+
+The username and password are the only lock on the page, so use a strong password. After 5 wrong passwords, a username is locked for 15 minutes. Sessions last 6 hours. Removing a login signs that person out at once. Passwords are stored as salted hashes, never as plain text. If you change the code later, use **Deploy → Manage deployments → Edit → New version** so the same URL keeps working.
+
+The **Post at** time is IST. If it's left empty, an approved post goes out within 5 minutes. The hourly GitHub run (13:15–19:15 IST) stays on as a backup, and the one-post-a-day limit still applies.
 
 ### Switching to a paid AI model (optional)
 

@@ -1,7 +1,7 @@
 """Workflow 1: research news, draft a post for review, publish it once approved.
 
 draft_daily_post  runs each morning and adds one "Pending review" row to the sheet.
-publish_approved  runs through the afternoon and publishes rows she marked "Approved".
+publish_approved  publishes rows she marked "Approved" once their "Post at" time has come.
 """
 
 from __future__ import annotations
@@ -28,6 +28,20 @@ from .store import (
 log = logging.getLogger(__name__)
 
 TOKEN_WARNING_DAYS = 7
+POST_AT_FORMATS = ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d")
+
+
+def parse_post_at(value: str, now: datetime) -> datetime | None:
+    """Read a "Post at" cell in the schedule's timezone. Empty means now; bad input raises ValueError."""
+    value = value.strip()
+    if not value:
+        return None
+    for fmt in POST_AT_FORMATS:
+        try:
+            return datetime.strptime(value, fmt).replace(tzinfo=now.tzinfo)
+        except ValueError:
+            continue
+    raise ValueError(value)
 
 
 def _used_urls(posts: list[PostRow]) -> set[str]:
@@ -111,9 +125,24 @@ def publish_approved(
     now = now or settings.now()
     today = now.date().isoformat()
     posts = store.list_posts()
-    approved = sorted((p for p in posts if p.is_status(APPROVED)), key=lambda p: p.date)
+    approved = []
+    for p in posts:
+        if not p.is_status(APPROVED):
+            continue
+        try:
+            post_at = parse_post_at(p.post_at, now)
+        except ValueError:
+            store.update_post(
+                p.id, notes=f'Couldn\'t read Post at "{p.post_at}". Use the format 2026-10-12 10:30.'
+            )
+            continue
+        if post_at and post_at > now:
+            log.info("%s is scheduled for %s.", p.id, p.post_at)
+            continue
+        approved.append((post_at or now, p))
+    approved = [p for _, p in sorted(approved, key=lambda pair: (pair[0], pair[1].date))]
     if not approved:
-        log.info("Nothing approved to publish.")
+        log.info("Nothing approved and due to publish.")
         return []
 
     if not settings.linkedin_configured:
