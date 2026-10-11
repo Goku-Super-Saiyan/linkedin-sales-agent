@@ -8,11 +8,15 @@ implement `generate_json` and register it in `get_llm`.
 from __future__ import annotations
 
 import json
+import logging
+import time
 from typing import Protocol
 
 import requests
 
 from .config import Settings
+
+log = logging.getLogger(__name__)
 
 DEFAULT_MODELS = {
     "gemini": "gemini-3.8-flash",
@@ -35,10 +39,35 @@ class GeminiLLM:
     name = "gemini"
     URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-    def __init__(self, api_key: str, model: str | None = None, timeout: int = 120):
+    # The free tier sometimes stalls or is briefly busy; these are worth another try.
+    RETRY_STATUS = {429, 500, 502, 503, 504}
+    ATTEMPTS = 3
+
+    def __init__(self, api_key: str, model: str | None = None, timeout: int = 90, retry_wait: float = 10):
         self.api_key = api_key
         self.model = model or DEFAULT_MODELS["gemini"]
         self.timeout = timeout
+        self.retry_wait = retry_wait
+
+    def _post(self, body: dict) -> requests.Response:
+        for attempt in range(1, self.ATTEMPTS + 1):
+            try:
+                resp = requests.post(
+                    self.URL.format(model=self.model),
+                    headers={"x-goog-api-key": self.api_key, "Content-Type": "application/json"},
+                    json=body,
+                    timeout=self.timeout,
+                )
+                if resp.status_code not in self.RETRY_STATUS or attempt == self.ATTEMPTS:
+                    return resp
+                problem = f"status {resp.status_code}"
+            except (requests.Timeout, requests.ConnectionError) as exc:
+                if attempt == self.ATTEMPTS:
+                    raise LLMError(f"Gemini did not respond after {self.ATTEMPTS} tries: {exc}") from exc
+                problem = type(exc).__name__
+            log.warning("Gemini attempt %d failed (%s); retrying.", attempt, problem)
+            time.sleep(self.retry_wait * attempt)
+        raise AssertionError("unreachable")
 
     def generate_json(self, system: str, prompt: str, schema: dict) -> dict:
         body = {
@@ -56,12 +85,7 @@ class GeminiLLM:
             ],
             "generationConfig": {"responseMimeType": "application/json", "temperature": 0.8},
         }
-        resp = requests.post(
-            self.URL.format(model=self.model),
-            headers={"x-goog-api-key": self.api_key, "Content-Type": "application/json"},
-            json=body,
-            timeout=self.timeout,
-        )
+        resp = self._post(body)
         if resp.status_code != 200:
             raise LLMError(f"Gemini returned {resp.status_code}: {resp.text[:300]}")
         try:

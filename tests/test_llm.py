@@ -32,9 +32,35 @@ def test_gemini_parses_json_reply(monkeypatch):
 
 
 def test_gemini_error_is_readable(monkeypatch):
-    monkeypatch.setattr(llm.requests, "post", lambda *a, **k: Resp(429, {"error": "quota"}))
-    with pytest.raises(llm.LLMError, match="429"):
-        llm.GeminiLLM("key").generate_json("s", "p", {})
+    monkeypatch.setattr(llm.requests, "post", lambda *a, **k: Resp(400, {"error": "bad request"}))
+    with pytest.raises(llm.LLMError, match="400"):
+        llm.GeminiLLM("key", retry_wait=0).generate_json("s", "p", {})
+
+
+def test_gemini_retries_timeouts_and_busy_replies(monkeypatch):
+    replies = [
+        llm.requests.Timeout("read timed out"),
+        Resp(503, {"error": "busy"}),
+        Resp(200, {"candidates": [{"content": {"parts": [{"text": '{"ok": 1}'}]}}]}),
+    ]
+
+    def fake_post(*a, **k):
+        reply = replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    monkeypatch.setattr(llm.requests, "post", fake_post)
+    assert llm.GeminiLLM("key", retry_wait=0).generate_json("s", "p", {}) == {"ok": 1}
+
+
+def test_gemini_gives_up_after_three_timeouts(monkeypatch):
+    def always_slow(*a, **k):
+        raise llm.requests.Timeout("read timed out")
+
+    monkeypatch.setattr(llm.requests, "post", always_slow)
+    with pytest.raises(llm.LLMError, match="3 tries"):
+        llm.GeminiLLM("key", retry_wait=0).generate_json("s", "p", {})
 
 
 def test_get_llm_picks_provider_and_requires_key():
