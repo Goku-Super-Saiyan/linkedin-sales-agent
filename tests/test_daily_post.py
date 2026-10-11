@@ -121,3 +121,40 @@ def test_publish_without_linkedin_asks_her_to_post_manually(profile, store):
     store.add_post(approved())
     publish_approved(Settings(), profile, store, publish=lambda *a: 1 / 0, now=NOW)
     assert store.list_posts()[0].status == POST_MANUALLY
+
+
+def test_publish_waits_for_post_at(settings, profile, store):
+    row = approved()
+    row.post_at = "2026-10-11 10:30"
+    store.add_post(row)
+    assert publish_approved(settings, profile, store, publish=lambda *a: 1 / 0, now=NOW) == []
+    assert store.list_posts()[0].status == APPROVED
+
+
+def test_publish_when_post_at_has_passed(settings, profile, store):
+    row = approved()
+    row.post_at = "2026-10-11T07:45"
+    store.add_post(row)
+    assert publish_approved(settings, profile, store, publish=lambda *a: "urn:li:share:3", now=NOW)
+    assert store.list_posts()[0].status == PUBLISHED
+
+
+def test_publish_earliest_post_at_first(settings, profile, store):
+    later, earlier = approved("later", "2026-10-10"), approved("earlier", "2026-10-11")
+    later.post_at, earlier.post_at = "2026-10-11 07:30", "2026-10-11 07:00"
+    store.add_post(later)
+    store.add_post(earlier)
+    publish_approved(settings, profile, store, publish=lambda *a: "urn:li:share:4", now=NOW)
+    rows = {r.id: r for r in store.list_posts()}
+    assert rows["earlier"].status == PUBLISHED
+    assert rows["later"].status == APPROVED
+
+
+def test_publish_explains_unreadable_post_at(settings, profile, store):
+    row = approved()
+    row.post_at = "tomorrow morning"
+    store.add_post(row)
+    publish_approved(settings, profile, store, publish=lambda *a: 1 / 0, now=NOW)
+    row = store.list_posts()[0]
+    assert row.status == APPROVED
+    assert "Couldn't read Post at" in row.notes

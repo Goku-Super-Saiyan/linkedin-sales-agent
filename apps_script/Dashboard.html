@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    :root { --bg: #f4f2ee; --card: #fff; --text: #1d2226; --muted: #666; --line: #e0dfdc;
+      --blue: #0a66c2; --green: #057642; --red: #b24020; --amber: #915907; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    header { position: sticky; top: 0; z-index: 1; background: var(--card); border-bottom: 1px solid var(--line);
+      padding: 12px 16px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    header h1 { font-size: 18px; margin: 0; flex: 1; }
+    header .hint { width: 100%; color: var(--muted); font-size: 13px; }
+    main { max-width: 760px; margin: 0 auto; padding: 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+    .top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+    .topic { font-weight: 600; flex: 1; min-width: 180px; }
+    .date { color: var(--muted); font-size: 13px; }
+    .badge { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; background: #eef3f8; color: var(--blue); }
+    .badge.Published { background: #e6f4ea; color: var(--green); }
+    .badge.Rejected, .badge.Failed { background: #fbeae5; color: var(--red); }
+    .badge.Pending { background: #fdf3e1; color: var(--amber); }
+    textarea { width: 100%; min-height: 220px; font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 8px; resize: vertical; }
+    textarea[readonly] { background: #fafafa; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+    label { font-size: 13px; color: var(--muted); }
+    input[type=datetime-local] { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; }
+    button { font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--blue);
+      background: var(--card); color: var(--blue); cursor: pointer; }
+    button.primary { background: var(--blue); color: #fff; }
+    button.danger { border-color: var(--red); color: var(--red); }
+    button:disabled { opacity: .5; cursor: default; }
+    .notes { margin-top: 10px; font-size: 13px; color: var(--amber); }
+    .meta { margin-top: 10px; font-size: 13px; color: var(--muted); word-break: break-all; }
+    .meta a { color: var(--blue); }
+    #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: #fff;
+      padding: 10px 16px; border-radius: 8px; display: none; max-width: 90%; }
+    .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LinkedIn posts</h1>
+    <button onclick="draftNow(this)">Write today's draft</button>
+    <button onclick="load()">Refresh</button>
+    <div class="hint" id="hint"></div>
+  </header>
+  <main id="list"><div class="empty">Loading…</div></main>
+  <div id="toast"></div>
+
+  <script>
+    const LOCKED = ['Publishing', 'Published'];
+
+    function load() {
+      google.script.run.withSuccessHandler(render).withFailureHandler(fail).getPosts();
+    }
+
+    function render(data) {
+      document.getElementById('hint').textContent =
+        'Time now (IST): ' + data.now + '. Scheduled posts go out within 5 minutes of their time. ' +
+        'At most ' + data.maxPerDay + ' post' + (data.maxPerDay > 1 ? 's' : '') + ' a day.';
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+      if (!data.posts.length) {
+        list.innerHTML = '<div class="empty">No posts yet. Click "Write today\'s draft".</div>';
+        return;
+      }
+      data.posts.forEach((p) => list.appendChild(card(p)));
+    }
+
+    function card(p) {
+      const locked = LOCKED.indexOf(p.status) >= 0;
+      const el = document.createElement('div');
+      el.className = 'card';
+      el.innerHTML = `
+        <div class="top">
+          <span class="topic"></span>
+          <span class="badge ${esc(p.status.split(' ')[0])}">${esc(p.status)}</span>
+          <span class="date">${esc(p.date)}</span>
+        </div>
+        <textarea ${locked ? 'readonly' : ''}></textarea>
+        ${locked ? '' : `
+        <div class="row">
+          <label>Post at (IST)</label>
+          <input type="datetime-local" value="${esc(p.postAt.replace(' ', 'T'))}">
+          <button class="primary" data-act="schedule">${p.postAt ? 'Schedule' : 'Approve'}</button>
+          <button data-act="now">Post now</button>
+          <button data-act="save">Save edits</button>
+          ${p.status === 'Rejected'
+            ? '<button data-act="pending">Back to review</button>'
+            : '<button class="danger" data-act="reject">Reject</button>'}
+        </div>`}
+        ${p.notes ? `<div class="notes">${esc(p.notes)}</div>` : ''}
+        <div class="meta">
+          ${p.link ? `<a href="${esc(p.link)}" target="_blank">View on LinkedIn</a> · posted ${esc(p.publishedAt)}<br>` : ''}
+          ${p.sources ? 'Source: ' + p.sources.split('\n').map((u) => `<a href="${esc(u)}" target="_blank">${esc(u)}</a>`).join(' ') : ''}
+        </div>`;
+      el.querySelector('.topic').textContent = p.topic || '(no topic)';
+      el.querySelector('textarea').value = p.text;
+      el.querySelectorAll('button[data-act]').forEach((b) => b.onclick = () => act(b, p, el));
+      el.querySelector('input') && el.querySelector('input').addEventListener('input', (e) => {
+        el.querySelector('[data-act=schedule]').textContent = e.target.value ? 'Schedule' : 'Approve';
+      });
+      return el;
+    }
+
+    function act(button, p, el) {
+      const text = el.querySelector('textarea').value;
+      const postAt = el.querySelector('input').value;
+      const runner = google.script.run.withFailureHandler((e) => { fail(e); load(); })
+        .withSuccessHandler(() => { toast(done[button.dataset.act]); load(); });
+      if (button.dataset.act === 'now' && !confirm('Post this to LinkedIn now?')) return;
+      el.querySelectorAll('button').forEach((b) => b.disabled = true);
+      const done = {
+        schedule: postAt ? 'Scheduled for ' + postAt.replace('T', ' ') + '.' : 'Approved. Posting now.',
+        now: 'Posting now. Refresh in a minute to see the link.',
+        save: 'Saved.',
+        reject: 'Rejected.',
+        pending: 'Moved back to review.',
+      };
+      if (button.dataset.act === 'schedule') runner.schedulePost(p.id, text, postAt);
+      if (button.dataset.act === 'now') runner.postNow(p.id, text);
+      if (button.dataset.act === 'save') runner.savePost(p.id, text, postAt);
+      if (button.dataset.act === 'reject') runner.setStatus(p.id, 'Rejected');
+      if (button.dataset.act === 'pending') runner.setStatus(p.id, 'Pending review');
+    }
+
+    function draftNow(button) {
+      button.disabled = true;
+      google.script.run
+        .withSuccessHandler(() => { toast('Writing today\'s draft. Refresh in about a minute.'); button.disabled = false; })
+        .withFailureHandler((e) => { fail(e); button.disabled = false; })
+        .draftNow();
+    }
+
+    function toast(message) {
+      const t = document.getElementById('toast');
+      t.textContent = message;
+      t.style.display = 'block';
+      clearTimeout(t.timer);
+      t.timer = setTimeout(() => t.style.display = 'none', 4000);
+    }
+
+    function fail(e) { toast('Error: ' + (e && e.message ? e.message : e)); }
+
+    function esc(s) {
+      return String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    }
+
+    load();
+  </script>
+</body>
+</html>

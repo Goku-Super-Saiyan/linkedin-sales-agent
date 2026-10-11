@@ -33,6 +33,8 @@ class PostRow:
     notes: str = ""
     linkedin_link: str = ""
     published_at: str = ""
+    # When to publish, "YYYY-MM-DD HH:MM" in the schedule's timezone. Empty means as soon as approved.
+    post_at: str = ""
 
     def is_status(self, status: str) -> bool:
         return self.status.strip().lower() == status.lower()
@@ -49,6 +51,7 @@ HEADERS = {
     "notes": "Notes",
     "linkedin_link": "LinkedIn link",
     "published_at": "Published at",
+    "post_at": "Post at",
 }
 FIELD_NAMES = [f.name for f in fields(PostRow)]
 
@@ -107,7 +110,13 @@ class SheetStore:
         from gspread.utils import ValidationConditionType
 
         try:
-            return self.spreadsheet.worksheet(self.TAB)
+            ws = self.spreadsheet.worksheet(self.TAB)
+            # Sheets created before a column was added get the new header too.
+            if ws.row_values(1) != list(HEADERS.values()):
+                if ws.col_count < len(HEADERS):
+                    ws.add_cols(len(HEADERS) - ws.col_count)
+                ws.update([list(HEADERS.values())], "A1")
+            return ws
         except gspread.WorksheetNotFound:
             ws = self.spreadsheet.add_worksheet(self.TAB, rows=1000, cols=len(HEADERS))
             ws.update([list(HEADERS.values())], "A1")
