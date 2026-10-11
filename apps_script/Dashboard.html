@@ -347,8 +347,12 @@
 
     function act(action, p, el) {
       const text = el.querySelector('textarea').value;
-      const postAt = el.querySelector('input').value;
+      const input = el.querySelector('input');
+      const postAt = input ? input.value : '';
       if (text.length > LIMIT && ['schedule', 'now'].indexOf(action) >= 0) return toast('The post is longer than LinkedIn allows. Shorten it first.');
+      // A date picker with only the time (or only the date) filled in reads as empty, so catch it here.
+      if (input && input.validity && input.validity.badInput) return toast('Pick both a date and a time, or clear the Post at box.');
+      if (action === 'schedule' && !postAt && data.nextSlot && !confirm('No time picked, so this goes in the next free slot: ' + nice(data.nextSlot) + '. OK?')) return;
       if (action === 'schedule' && postAt && postAt.replace('T', ' ') < data.now) return toast('That time has already passed. Pick a later time, or click Post now.');
       if (action === 'now' && !confirm('Post this to LinkedIn now?')) return;
       el.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
