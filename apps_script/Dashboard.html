@@ -2,6 +2,8 @@
 <html>
 <head>
   <base target="_top">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg: #f3f2ef; --card: #ffffff; --text: #191919; --muted: #666666; --line: #e3e1dc; --soft: #f7f6f3;
@@ -93,6 +95,18 @@
     .check { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; margin: 4px 0 18px; }
     .check input { margin-top: 3px; }
     .modal .actions { justify-content: flex-end; }
+    .acct { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: var(--soft); color: var(--muted); margin-left: 6px; white-space: nowrap; }
+    .acct.company { background: #eef0ff; color: #3a3fb0; }
+    .pic { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; background: var(--soft); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+    .pic canvas { width: 168px; height: 168px; border-radius: 8px; flex: none; }
+    .pic .pic-side { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 8px; }
+    .pic label { font-size: 13px; font-weight: 600; }
+    .pic input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; width: 100%; }
+    .pic .row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .seg { display: inline-flex; background: var(--card); border-radius: 999px; box-shadow: var(--shadow); padding: 3px; }
+    .seg button { border: 0; background: transparent; padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; }
+    .seg button.on { background: var(--blue); color: #fff; }
+    .choices { display: grid; gap: 10px; margin-bottom: 8px; }
     .empty { text-align: center; color: var(--muted); padding: 48px 16px; background: var(--card); border-radius: 12px; }
     #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: #fff;
       padding: 10px 16px; border-radius: 10px; max-width: calc(100% - 32px); box-shadow: var(--shadow); z-index: 3; }
@@ -102,6 +116,8 @@
       .short { display: inline; }
       .bar { gap: 6px; } .bar .btn { padding: 6px 12px; }
       .tab { padding: 6px 10px; }
+      .tabs { flex-basis: 100%; }
+      .seg { flex: 1; } .seg button { flex: 1; }
     }
   </style>
 </head>
@@ -138,6 +154,7 @@
       </div>
       <div class="toolbar">
         <div class="tabs" id="tabs"></div>
+        <div class="seg" id="acctSeg" hidden></div>
         <button class="btn quiet" id="refreshBtn" title="Refresh">↻<span class="long"> Refresh</span></button>
       </div>
       <p class="hint" id="hint"></p>
@@ -151,11 +168,24 @@
       <label class="field"><span>Default post time (IST)</span><input type="time" id="setTime"></label>
       <label class="field"><span>Posts per day, at most</span><input type="number" id="setMax" min="1" max="5" required></label>
       <label class="check"><input type="checkbox" id="setApply"> Also move posts that are already scheduled to the new time</label>
+      <label class="field"><span>Add a picture card to every … posts (0 = never)</span><input type="number" id="setPic" min="0" max="10" required></label>
+      <label class="check"><input type="checkbox" id="setCompany"> Also write a daily draft for the company page</label>
       <div class="actions">
         <button type="button" class="btn quiet" id="settingsCancel">Cancel</button>
         <button class="btn primary" id="settingsSave">Save</button>
       </div>
     </form>
+  </div>
+  <div class="modal-bg" id="draftView" hidden>
+    <div class="modal">
+      <h2>Write a new draft</h2>
+      <p>It takes about a minute. Refresh to see it.</p>
+      <div class="choices">
+        <button class="btn primary block" data-account="profile">For her profile</button>
+        <button class="btn block" data-account="company">For the company page</button>
+      </div>
+      <div class="actions"><button type="button" class="btn quiet" id="draftCancel">Cancel</button></div>
+    </div>
   </div>
   <div id="toast" hidden></div>
 
@@ -170,6 +200,9 @@
     let token = store('get');
     let data = null;
     let tab = 'review';
+    let acct = 'all';
+    // Same as brand in config/company.yaml, so the preview matches what gets posted.
+    const BRAND = { name: '360 Degree Cloud', background: '#0B2545', accent: '#1B9AF5', text: '#FFFFFF' };
 
     // ---- Session ----
 
@@ -261,7 +294,9 @@
       const st = res.settings;
       document.getElementById('hint').textContent = 'Times are IST (now ' + nice(res.now) + '). ' +
         (st.defaultTime ? 'Approved posts go out at ' + clock(st.defaultTime) + ' by default' : 'Approved posts go out right away by default') +
-        ', at most ' + st.maxPerDay + ' a day. Change this in Settings.';
+        ', at most ' + st.maxPerDay + ' a day' + (st.companyPage ? ' per account' : '') + '. ' +
+        (st.pictureEvery ? 'Every ' + (st.pictureEvery === 1 ? '' : st.pictureEvery + (st.pictureEvery === 2 ? 'nd' : st.pictureEvery === 3 ? 'rd' : 'th') + ' ') + 'post gets a picture. ' : '') +
+        'Change this in Settings.';
 
       const tabs = document.getElementById('tabs');
       tabs.innerHTML = '';
@@ -273,9 +308,23 @@
         tabs.appendChild(b);
       });
 
+      const seg = document.getElementById('acctSeg');
+      const hasCompany = res.settings.companyPage || res.posts.some(function (p) { return p.account === 'Company page'; });
+      seg.hidden = !hasCompany;
+      seg.innerHTML = '';
+      [['all', 'All'], ['Her profile', 'Her profile'], ['Company page', 'Company']].forEach(function (o) {
+        const b = document.createElement('button');
+        b.textContent = o[1];
+        b.className = acct === o[0] ? 'on' : '';
+        b.onclick = function () { acct = o[0]; render(data); };
+        seg.appendChild(b);
+      });
+
       const list = document.getElementById('list');
       list.innerHTML = '';
-      const shown = res.posts.filter(function (p) { return tab === 'all' || groupOf(p) === tab; });
+      const shown = res.posts.filter(function (p) {
+        return (tab === 'all' || groupOf(p) === tab) && (acct === 'all' || !hasCompany || p.account === acct);
+      });
       if (!shown.length) {
         list.innerHTML = '<div class="empty">' + {
           review: 'Nothing to review. The next draft arrives at 08:00 IST, or click "Write a new draft".',
@@ -299,20 +348,30 @@
       const scheduled = p.status === 'Approved';
       const el = document.createElement('div');
       el.className = 'card';
+      const company = p.account === 'Company page';
+      const slot = (data.nextSlots || {})[p.account] || '';
       let sub = 'Drafted ' + nice(p.date);
       if (p.status === 'Published') sub = 'Posted ' + nice(p.publishedAt);
       else if (scheduled) sub = p.postAt ? 'Goes out ' + nice(p.postAt) : 'Going out in the next few minutes';
       el.innerHTML =
-        '<div class="card-head"><h3><span class="t"></span><div class="sub">' + esc(sub) + '</div></h3>' + pill(p.status) + '</div>' +
+        '<div class="card-head"><h3><span class="t"></span><div class="sub">' + esc(sub) +
+          '<span class="acct' + (company ? ' company' : '') + '">' + (company ? 'Company page' : 'Her profile') + '</span></div></h3>' +
+          pill(p.status) + '</div>' +
         '<div class="editor"><textarea ' + (locked ? 'readonly' : '') + '></textarea><div class="count"></div></div>' +
         (locked ? '' :
           '<div class="when"><label>Post at</label><input type="datetime-local" value="' + esc(p.postAt.replace(' ', 'T')) + '">' +
-          '<span class="note">' + (data.nextSlot ? 'Leave empty to use the next free slot: ' + esc(nice(data.nextSlot)) + '.'
-            : 'Leave empty to post as soon as you approve.') + '</span></div>' +
+          '<span class="note">' + (slot ? 'Leave empty to use the next free slot: ' + esc(nice(slot)) + '.'
+            : 'Leave empty to post as soon as you approve.') + '</span></div>') +
+        '<div class="pic"' + (p.picture ? '' : ' hidden') + '><canvas width="1200" height="1200"></canvas><div class="pic-side">' +
+          '<label>Picture text</label><input class="pic-text" maxlength="140" ' + (locked ? 'readonly' : '') + '>' +
+          '<div class="row"><button class="btn quiet" data-pic="download">Download picture</button>' +
+          (locked ? '' : '<button class="btn danger" data-pic="remove">Remove picture</button>') + '</div></div></div>' +
+        (locked ? '' :
           '<div class="actions">' +
             '<button class="btn primary" data-act="schedule"></button>' +
             '<button class="btn" data-act="now">Post now</button>' +
             '<button class="btn quiet" data-act="save">Save edits</button>' +
+            '<button class="btn quiet" data-pic="add"' + (p.picture ? ' hidden' : '') + '>+ Picture</button>' +
             '<span class="spacer"></span>' +
             (p.status === 'Rejected' ? '<button class="btn quiet" data-act="pending">Back to review</button>'
               : scheduled ? '<button class="btn quiet" data-act="pending">Unschedule</button>'
@@ -334,7 +393,7 @@
       };
       ta.addEventListener('input', updateCount);
       updateCount();
-      const input = el.querySelector('input');
+      const input = el.querySelector('.when input');
       const main = el.querySelector('[data-act=schedule]');
       if (main) {
         const label = function () { main.textContent = input.value ? (scheduled ? 'Reschedule' : 'Schedule') : 'Approve'; };
@@ -342,19 +401,96 @@
         label();
       }
       el.querySelectorAll('button[data-act]').forEach(function (b) { b.onclick = function () { act(b.dataset.act, p, el); }; });
+
+      // Picture card: preview, edit, add, remove, download.
+      const pic = el.querySelector('.pic');
+      const picText = el.querySelector('.pic-text');
+      const canvas = el.querySelector('canvas');
+      const addBtn = el.querySelector('[data-pic=add]');
+      picText.value = p.picture;
+      const redraw = function () { drawCard(canvas, picText.value, p.pillar); };
+      picText.addEventListener('input', redraw);
+      if (p.picture) redraw();
+      el.querySelector('[data-pic=download]').onclick = function () {
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        a.download = (p.id || 'post') + '.png';
+        a.click();
+      };
+      const removeBtn = el.querySelector('[data-pic=remove]');
+      if (removeBtn) removeBtn.onclick = function () {
+        picText.value = '';
+        pic.hidden = true;
+        if (addBtn) addBtn.hidden = false;
+        toast('Picture removed. Click Save edits, Schedule or Post now to keep the change.');
+      };
+      if (addBtn) addBtn.onclick = function () {
+        picText.value = picText.value || p.topic || '';
+        pic.hidden = false;
+        addBtn.hidden = true;
+        redraw();
+        picText.focus();
+      };
       return el;
+    }
+
+    // Draws the same card the agent posts (agent/images.py): label, headline, company name.
+    function drawCard(canvas, text, label) {
+      const ctx = canvas.getContext('2d');
+      const S = 1200, M = 96, W = S - 2 * M;
+      const paint = function () {
+        ctx.fillStyle = BRAND.background;
+        ctx.fillRect(0, 0, S, S);
+        ctx.fillStyle = BRAND.accent;
+        ctx.fillRect(M, M, 120, 12);
+        ctx.textBaseline = 'top';
+        if (label) {
+          ctx.font = '700 34px Inter, sans-serif';
+          ctx.fillText(label.toUpperCase(), M, M + 44);
+        }
+        const top = M + 140, bottom = S - M - 120;
+        let size = 96, lines = [], lh = 0;
+        for (; size >= 40; size -= 4) {
+          ctx.font = '700 ' + size + 'px Inter, sans-serif';
+          lines = [];
+          String(text || '').trim().split(/\s+/).forEach(function (w) {
+            if (!w) return;
+            const last = lines.length ? lines[lines.length - 1] + ' ' + w : w;
+            if (lines.length && ctx.measureText(last).width <= W) lines[lines.length - 1] = last;
+            else lines.push(w);
+          });
+          lh = Math.round(size * 1.22);
+          if (lines.length * lh <= bottom - top && lines.every(function (l) { return ctx.measureText(l).width <= W; })) break;
+        }
+        ctx.fillStyle = BRAND.text;
+        let y = top + Math.floor((bottom - top - lines.length * lh) / 2);
+        lines.forEach(function (l) { ctx.fillText(l, M, y); y += lh; });
+        ctx.fillStyle = BRAND.accent;
+        ctx.fillRect(M, S - M - 71, W, 3);
+        ctx.fillStyle = BRAND.text;
+        ctx.font = '400 34px Inter, sans-serif';
+        ctx.fillText(BRAND.name, M, S - M - 44);
+      };
+      paint();
+      // Draw again once the Inter font has loaded, so the preview matches the posted picture.
+      if (document.fonts && document.fonts.load) {
+        Promise.all([document.fonts.load('700 40px Inter'), document.fonts.load('400 34px Inter')]).then(paint, function () {});
+      }
     }
 
     function act(action, p, el) {
       const text = el.querySelector('textarea').value;
-      const input = el.querySelector('input');
+      const input = el.querySelector('.when input');
       const postAt = input ? input.value : '';
+      const pic = el.querySelector('.pic');
+      const picture = pic && !pic.hidden ? el.querySelector('.pic-text').value.trim() : '';
+      const slot = (data.nextSlots || {})[p.account] || '';
       if (text.length > LIMIT && ['schedule', 'now'].indexOf(action) >= 0) return toast('The post is longer than LinkedIn allows. Shorten it first.');
       // A date picker with only the time (or only the date) filled in reads as empty, so catch it here.
       if (input && input.validity && input.validity.badInput) return toast('Pick both a date and a time, or clear the Post at box.');
-      if (action === 'schedule' && !postAt && data.nextSlot && !confirm('No time picked, so this goes in the next free slot: ' + nice(data.nextSlot) + '. OK?')) return;
+      if (action === 'schedule' && !postAt && slot && !confirm('No time picked, so this goes in the next free slot: ' + nice(slot) + '. OK?')) return;
       if (action === 'schedule' && postAt && postAt.replace('T', ' ') < data.now) return toast('That time has already passed. Pick a later time, or click Post now.');
-      if (action === 'now' && !confirm('Post this to LinkedIn now?')) return;
+      if (action === 'now' && !confirm(p.account === 'Company page' ? 'Post this to the company page now?' : 'Post this to her LinkedIn profile now?')) return;
       el.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
       const messages = {
         now: 'Posting now. Refresh in a minute to see the link.',
@@ -369,20 +505,31 @@
         load();
       };
       const failed = function (msg) { fail(msg); load(); };
-      if (action === 'schedule') call('schedulePost', [p.id, text, postAt], done, failed);
-      if (action === 'now') call('postNow', [p.id, text], done, failed);
-      if (action === 'save') call('savePost', [p.id, text, postAt], done, failed);
+      if (action === 'schedule') call('schedulePost', [p.id, text, postAt, picture], done, failed);
+      if (action === 'now') call('postNow', [p.id, text, picture], done, failed);
+      if (action === 'save') call('savePost', [p.id, text, postAt, picture], done, failed);
       if (action === 'reject') call('setStatus', [p.id, 'Rejected'], done, failed);
       if (action === 'pending') call('setStatus', [p.id, 'Pending review'], done, failed);
     }
 
     document.getElementById('refreshBtn').onclick = load;
-    document.getElementById('draftBtn').onclick = function () {
-      const btn = this;
+    function writeDraft(account) {
+      const btn = document.getElementById('draftBtn');
       btn.disabled = true;
-      call('draftNow', [], function () { toast('Writing a new draft. Refresh in about a minute.'); btn.disabled = false; },
-        function (msg) { fail(msg); btn.disabled = false; });
+      document.getElementById('draftView').hidden = true;
+      call('draftNow', [account], function () {
+        toast('Writing a new draft for ' + (account === 'company' ? 'the company page' : 'her profile') + '. Refresh in about a minute.');
+        btn.disabled = false;
+      }, function (msg) { fail(msg); btn.disabled = false; });
+    }
+    document.getElementById('draftBtn').onclick = function () {
+      if (data && data.settings.companyPage) document.getElementById('draftView').hidden = false;
+      else writeDraft('profile');
     };
+    document.querySelectorAll('#draftView [data-account]').forEach(function (b) {
+      b.onclick = function () { writeDraft(b.dataset.account); };
+    });
+    document.getElementById('draftCancel').onclick = function () { document.getElementById('draftView').hidden = true; };
 
     // ---- Settings ----
 
@@ -390,6 +537,8 @@
       document.getElementById('setTime').value = data.settings.defaultTime;
       document.getElementById('setMax').value = data.settings.maxPerDay;
       document.getElementById('setApply').checked = false;
+      document.getElementById('setPic').value = data.settings.pictureEvery;
+      document.getElementById('setCompany').checked = !!data.settings.companyPage;
       document.getElementById('settingsView').hidden = false;
     };
     document.getElementById('settingsCancel').onclick = function () {
@@ -400,7 +549,8 @@
       const btn = document.getElementById('settingsSave');
       btn.disabled = true;
       call('saveSettings', [document.getElementById('setTime').value, document.getElementById('setMax').value,
-        document.getElementById('setApply').checked], function (res) {
+        document.getElementById('setApply').checked, document.getElementById('setPic').value,
+        document.getElementById('setCompany').checked], function (res) {
         btn.disabled = false;
         document.getElementById('settingsView').hidden = true;
         toast('Settings saved.' + (res.moved ? ' Moved ' + res.moved + ' scheduled post' + (res.moved > 1 ? 's' : '') + '.' : ''));

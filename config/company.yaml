@@ -75,6 +75,12 @@ content:
     - Questions to ask before starting a Salesforce integration project
     - How to measure whether your CRM is actually being used by the team
 
+  # Also write a daily draft for the company page, in the company's voice ("we").
+  company_page: true
+  # Every how many posts (per account) get a picture card. 0 turns pictures off.
+  # The dashboard's Settings panel overrides this.
+  picture_every: 3
+
   # Which kind of post each day gets. source: news (falls back to an evergreen topic when there's
   # no fresh news) or evergreen. hooks: shapes to try, in order; one used in the last 6 days is
   # skipped. Shapes: number_first, contrarian, false_binary, diverging_paths, explain_simply,
@@ -122,6 +128,13 @@ content:
       pillar: Point of view
       source: evergreen
       hooks: [diverging_paths, false_binary]
+
+# Colours and name on picture cards.
+brand:
+  name: 360 Degree Cloud
+  background: "#0B2545"
+  accent: "#1B9AF5"
+  text: "#FFFFFF"
 
 schedule:
   timezone: Asia/Kolkata

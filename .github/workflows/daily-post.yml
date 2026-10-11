@@ -13,6 +13,11 @@ on:
         type: choice
         options: [draft, new-draft, publish]
         default: draft
+      account:
+        description: Who new-draft writes for
+        type: choice
+        options: [profile, company]
+        default: profile
 
 concurrency:
   group: daily-post
@@ -21,7 +26,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,4 +46,8 @@ jobs:
           LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
           LINKEDIN_PERSON_URN: ${{ secrets.LINKEDIN_PERSON_URN }}
           LINKEDIN_TOKEN_EXPIRES_ON: ${{ secrets.LINKEDIN_TOKEN_EXPIRES_ON }}
-        run: python -m agent "$COMMAND"
+          LINKEDIN_ORG_URN: ${{ secrets.LINKEDIN_ORG_URN }}
+          LINKEDIN_ORG_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ORG_ACCESS_TOKEN }}
+          LINKEDIN_ORG_TOKEN_EXPIRES_ON: ${{ secrets.LINKEDIN_ORG_TOKEN_EXPIRES_ON }}
+          ACCOUNT: ${{ inputs.account || 'profile' }}
+        run: python -m agent "$COMMAND" --account "$ACCOUNT"

@@ -1,8 +1,9 @@
 /**
  * Posting dashboard for the LinkedIn agent. It lives inside the Google Sheet.
  *
- * - The dashboard (a web app) lists posts. Each can be edited, scheduled, posted now or
- *   rejected, and today's draft can be written on demand.
+ * - The dashboard (a web app) lists posts for her profile and the company page. Each can be
+ *   edited, given a picture card, scheduled, posted now or rejected, and new drafts can be
+ *   written on demand.
  * - Every 5 minutes, checkDue() looks for approved posts whose "Post at" time has come and
  *   asks GitHub to publish them. GitHub runs only when something is due.
  * - People sign in with a username and password. Logins are added from the sheet's
@@ -17,7 +18,9 @@ const TAB = 'Posts';
 const TZ = 'Asia/Kolkata';
 const SETTINGS_TAB = 'Settings';
 // Used until someone saves the Settings panel. Same defaults as config/company.yaml.
-const DEFAULT_SETTINGS = { defaultTime: '10:00', maxPerDay: 1 };
+const DEFAULT_SETTINGS = { defaultTime: '10:00', maxPerDay: 1, pictureEvery: 3, companyPage: true };
+const PROFILE = 'Her profile';
+const COMPANY = 'Company page';
 const DISPATCH_GAP_MS = 4 * 60 * 1000;
 const SESSION_SECONDS = 6 * 60 * 60; // The longest CacheService keeps anything.
 const MAX_FAILED_LOGINS = 5; // Per username, per 15 minutes.
@@ -33,14 +36,12 @@ function install() {
   ScriptApp.newTrigger('checkDue').timeBased().everyMinutes(5).create();
   const sheet = sheet_();
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  if (headers.indexOf('Post at') < 0) {
-    // The agent adds these on its next run too; adding them here lets the dashboard work today.
-    ['Published at', 'Post at'].filter((h) => headers.indexOf(h) < 0).forEach((h) => {
-      const col = sheet.getLastColumn() + 1;
-      if (col > sheet.getMaxColumns()) sheet.insertColumnAfter(sheet.getMaxColumns());
-      sheet.getRange(1, col).setValue(h);
-    });
-  }
+  // The agent adds these on its next run too; adding them here lets the dashboard work today.
+  ['Published at', 'Post at', 'Account', 'Picture'].filter((h) => headers.indexOf(h) < 0).forEach((h) => {
+    const col = sheet.getLastColumn() + 1;
+    if (col > sheet.getMaxColumns()) sheet.insertColumnAfter(sheet.getMaxColumns());
+    sheet.getRange(1, col).setValue(h);
+  });
   sheet.getRange(2, col_(sheet, 'Post at'), sheet.getMaxRows() - 1, 1).setNumberFormat('@');
 }
 
@@ -124,33 +125,38 @@ function logout(token) {
 function getPosts(token) {
   const username = user_(token);
   const settings = settings_();
-  const posts = rows_()
+  const rows = rows_();
+  const posts = rows
     .map((r) => ({ id: r.ID, date: r.Date, status: r.Status, topic: r.Topic, text: r['Post text'],
       sources: r.Sources, notes: r.Notes, link: r['LinkedIn link'], publishedAt: r['Published at'],
-      postAt: r['Post at'] }))
+      postAt: r['Post at'], account: r.Account, picture: r.Picture, pillar: pillar_(r.Notes) }))
     .reverse()
-    .slice(0, 60);
-  return { posts: posts, now: now_(), settings: settings, nextSlot: nextSlot_(rows_(), settings, ''),
-    username: username };
+    .slice(0, 80);
+  const nextSlots = {};
+  nextSlots[PROFILE] = nextSlot_(rows, settings, '', PROFILE);
+  nextSlots[COMPANY] = nextSlot_(rows, settings, '', COMPANY);
+  return { posts: posts, now: now_(), settings: settings, nextSlots: nextSlots, username: username };
 }
 
-function savePost(token, id, text, postAt) {
+function savePost(token, id, text, postAt, picture) {
   user_(token);
-  update_(id, { 'Post text': text, 'Post at': clean_(postAt) });
+  update_(id, { 'Post text': text, 'Post at': clean_(postAt), 'Picture': cleanPicture_(picture) });
 }
 
 // Returns the time it was scheduled for ('' means right away).
-function schedulePost(token, id, text, postAt) {
+function schedulePost(token, id, text, postAt, picture) {
   user_(token);
-  const when = clean_(postAt) || nextSlot_(rows_(), settings_(), id);
-  update_(id, { 'Post text': text, 'Post at': when, 'Status': 'Approved', 'Notes': '' });
+  const rows = rows_();
+  const row = rows.filter((r) => r.ID === id)[0];
+  const when = clean_(postAt) || nextSlot_(rows, settings_(), id, row ? row.Account : PROFILE);
+  update_(id, { 'Post text': text, 'Post at': when, 'Status': 'Approved', 'Picture': cleanPicture_(picture) });
   if (!when || when <= now_()) dispatch_('publish');
   return when;
 }
 
-function postNow(token, id, text) {
+function postNow(token, id, text, picture) {
   user_(token);
-  update_(id, { 'Post text': text, 'Post at': now_(), 'Status': 'Approved', 'Notes': '' });
+  update_(id, { 'Post text': text, 'Post at': now_(), 'Status': 'Approved', 'Picture': cleanPicture_(picture) });
   dispatch_('publish');
 }
 
@@ -160,25 +166,28 @@ function setStatus(token, id, status) {
   update_(id, { 'Status': status });
 }
 
-// Always writes one more draft, even if today's daily draft exists.
-function draftNow(token) {
+// Always writes one more draft for the account ('profile' or 'company'), even if today's exists.
+function draftNow(token, account) {
   user_(token);
   sheet_();
-  dispatch_('new-draft');
+  dispatch_('new-draft', account === 'company' ? 'company' : 'profile');
 }
 
 // Saves the default post time and daily limit. With applyToAll, every scheduled post that
 // hasn't gone out yet is moved onto the new times, earliest first.
-function saveSettings(token, defaultTime, maxPerDay, applyToAll) {
+function saveSettings(token, defaultTime, maxPerDay, applyToAll, pictureEvery, companyPage) {
   user_(token);
   const time = String(defaultTime || '').trim();
   if (time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error('Pick a valid time.');
   const max = Number(maxPerDay);
   if (!(max >= 1 && max <= 5)) throw new Error('Posts per day must be between 1 and 5.');
+  const every = Number(pictureEvery);
+  if (!(every >= 0 && every <= 10 && every === Math.floor(every))) throw new Error('Pictures: pick a whole number from 0 to 10.');
   const ss = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
   const tab = ss.getSheetByName(SETTINGS_TAB) || ss.insertSheet(SETTINGS_TAB);
-  tab.getRange(1, 1, 3, 2).setNumberFormat('@').setValues([
-    ['Setting', 'Value'], ['default_post_time', time], ['max_posts_per_day', String(max)]]);
+  tab.getRange(1, 1, 5, 2).setNumberFormat('@').setValues([
+    ['Setting', 'Value'], ['default_post_time', time], ['max_posts_per_day', String(max)],
+    ['picture_every', String(every)], ['company_page', companyPage ? 'yes' : 'no']]);
   SpreadsheetApp.flush();
   let moved = 0;
   if (applyToAll) {
@@ -190,7 +199,7 @@ function saveSettings(token, defaultTime, maxPerDay, applyToAll) {
       .sort((a, b) => (a['Post at'] || '').localeCompare(b['Post at'] || ''));
     toMove.forEach((r) => { r['Post at'] = ''; }); // Free their old slots before reassigning.
     toMove.forEach((r) => {
-      r['Post at'] = nextSlot_(rows, settings, r.ID);
+      r['Post at'] = nextSlot_(rows, settings, r.ID, r.Account);
       update_(r.ID, { 'Post at': r['Post at'] });
       moved++;
     });
@@ -204,10 +213,12 @@ function checkDue() {
   const rows = rows_();
   const now = now_();
   const today = now.slice(0, 10);
-  const postedToday = rows.filter((r) => r.Status === 'Published' && r['Published at'].startsWith(today)).length;
-  if (postedToday >= settings_().maxPerDay) return;
+  const max = settings_().maxPerDay;
+  // Each account has its own daily limit.
   const due = rows.some((r) => r.Status.trim().toLowerCase() === 'approved'
-    && (!r['Post at'] || r['Post at'].replace('T', ' ') <= now));
+    && (!r['Post at'] || r['Post at'].replace('T', ' ') <= now)
+    && rows.filter((p) => p.Account === r.Account && p.Status === 'Published'
+      && p['Published at'].startsWith(today)).length < max);
   const last = Number(PropertiesService.getScriptProperties().getProperty('LAST_DISPATCH') || 0);
   // Give the last run time to finish before asking again.
   if (due && Date.now() - last > DISPATCH_GAP_MS) dispatch_('publish');
@@ -224,6 +235,8 @@ function rows_() {
     headers.forEach((h, i) => { r[h] = row[i]; });
     r['Post at'] = (r['Post at'] || '').replace('T', ' ');
     r['Published at'] = r['Published at'] || '';
+    r.Account = r.Account || PROFILE;
+    r.Picture = r.Picture || '';
     return r;
   });
 }
@@ -236,16 +249,28 @@ function settings_() {
   return {
     defaultTime: 'default_post_time' in saved ? saved.default_post_time : DEFAULT_SETTINGS.defaultTime,
     maxPerDay: Number(saved.max_posts_per_day) || DEFAULT_SETTINGS.maxPerDay,
+    pictureEvery: 'picture_every' in saved ? Number(saved.picture_every) || 0 : DEFAULT_SETTINGS.pictureEvery,
+    companyPage: 'company_page' in saved ? saved.company_page === 'yes' : DEFAULT_SETTINGS.companyPage,
   };
 }
 
-// The next default-time slot with room left under the daily limit, or '' for "right away"
-// when no default time is set. Posts already published or scheduled fill the slots.
-function nextSlot_(rows, settings, ignoreId) {
+// "Plan: Monday, Industry news. Hook: ..." in Notes gives the label on the picture card.
+function pillar_(notes) {
+  const m = /Plan: [^,]+, ([^.]+)\./.exec(notes || '');
+  return m ? m[1] : '';
+}
+
+function cleanPicture_(picture) {
+  return String(picture || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+}
+
+// The next default-time slot with room left under the account's daily limit, or '' for "right
+// away" when no default time is set. Posts already published or scheduled fill the slots.
+function nextSlot_(rows, settings, ignoreId, account) {
   if (!settings.defaultTime) return '';
   const busy = {};
   rows.forEach((r) => {
-    if (r.ID === ignoreId) return;
+    if (r.ID === ignoreId || r.Account !== (account || PROFILE)) return;
     const day = r.Status === 'Published' ? r['Published at'].slice(0, 10)
       : (r.Status === 'Approved' || r.Status === 'Publishing') && r['Post at'] ? r['Post at'].slice(0, 10) : '';
     if (day) busy[day] = (busy[day] || 0) + 1;
@@ -325,7 +350,7 @@ function clean_(postAt) {
   return String(postAt || '').trim().replace('T', ' ');
 }
 
-function dispatch_(command) {
+function dispatch_(command, account) {
   const props = PropertiesService.getScriptProperties();
   const token = props.getProperty('GITHUB_TOKEN');
   if (!token) throw new Error('Add the script property GITHUB_TOKEN first.');
@@ -335,7 +360,7 @@ function dispatch_(command) {
       method: 'post',
       contentType: 'application/json',
       headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json' },
-      payload: JSON.stringify({ ref: 'main', inputs: { command: command } }),
+      payload: JSON.stringify({ ref: 'main', inputs: { command: command, account: account || 'profile' } }),
       muteHttpExceptions: true,
     },
   );

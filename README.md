@@ -25,6 +25,8 @@ Each row in the **Posts** tab is one draft:
 | LinkedIn link | Link to the published post |
 | Published at | When it went out |
 | Post at | When to publish, IST, for example `2026-10-12 10:30`. Empty means as soon as it's approved. |
+| Account | `Her profile` or `Company page` |
+| Picture | The line shown on the post's picture card. Empty means no picture. |
 
 If a row says **Failed**, the note says why. Fix the problem and set Status back to **Approved**.
 
@@ -70,9 +72,23 @@ This step lets the agent publish by itself. Until it's done, everything else sti
 
 LinkedIn sign-ins last about 60 days. A week before expiry, the agent adds a reminder in the sheet's Notes column. Repeat step 4 and update the three secrets.
 
+### 4b. Connect the company page (optional)
+
+Each day the agent also writes a draft for the company page, in the company's voice ("we"). Until the page is connected, those drafts are marked **Post manually**: copy the text, download the picture from the dashboard, and post it from the page yourself. To publish them automatically:
+
+1. In [LinkedIn Developers](https://www.linkedin.com/developers/apps), request the **Community Management API** product. LinkedIn reviews the request, which usually takes 1–2 weeks. It may ask you to create a separate app for this product.
+2. Find the page's number in its admin URL: `linkedin.com/company/<NUMBER>/admin`.
+3. A **page admin** runs:
+   ```bash
+   LINKEDIN_CLIENT_ID=... LINKEDIN_CLIENT_SECRET=... python scripts/linkedin_auth.py --company <NUMBER>
+   ```
+4. Save the three values it prints as the secrets `LINKEDIN_ORG_ACCESS_TOKEN`, `LINKEDIN_ORG_URN` and `LINKEDIN_ORG_TOKEN_EXPIRES_ON`.
+
+To stop company page drafts, untick **Also write a daily draft for the company page** in the dashboard's Settings.
+
 ### 5. Posting dashboard
 
-The dashboard is a web page that lives inside the Google Sheet. People sign in with a username and password. They can read and edit each draft, pick a date and time and click **Schedule**, click **Post now** or **Reject**, and click **Write a new draft** to get another draft at any time. The automatic draft still comes once a day at 08:00 IST. Under **Settings** they set the default post time and the daily limit. Approved posts without their own time go into the next free slot. Every 5 minutes it checks for posts whose time has come and asks GitHub to publish them.
+The dashboard is a web page that lives inside the Google Sheet. People sign in with a username and password. They can read and edit each draft, pick a date and time and click **Schedule**, click **Post now** or **Reject**, and click **Write a new draft** to get another draft at any time. The automatic draft still comes once a day at 08:00 IST. Under **Settings** they set the default post time, the daily limit (per account), how often posts get a picture, and whether the company page gets drafts. Each post is tagged **Her profile** or **Company page**, and the filter at the top shows one or both. Approved posts without their own time go into the next free slot. Every 5 minutes it checks for posts whose time has come and asks GitHub to publish them.
 
 1. **Make a GitHub token.** On GitHub, open **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**. Under **Repository access**, choose only this repository. Under **Permissions**, set **Actions** to **Read and write**. Copy the token.
 2. **Add the code.** In the Google Sheet, open **Extensions → Apps Script**.
@@ -118,6 +134,8 @@ To pin a specific model, set the variable `LLM_MODEL`.
 | Sunday | Point of view | No |
 
 A news day with no fresh news falls back to an evergreen topic. A hook shape isn't used twice within 6 days. The Notes column says which day's plan and hook each draft used.
+
+**Pictures.** Every 3rd post for each account gets a picture card: the post's main point in large type on the brand colours (`brand` in `config/company.yaml`). In the dashboard you can edit the card's text, remove it, add one to any post, or download it. The card is drawn again when the post is published, so nothing has to be stored. Change how often in Settings (0 turns pictures off).
 
 **Sounding like a person.** After the first draft, the AI edits it once against a checklist: strongest point in line 1, a specific behind every claim, no "Short. Punchy. Done." stacks, no "Let me be honest", and a closing question about the reader's own work. Then every draft is checked for tells: a question as the first line, words like "leverage" or "seamless", reveal phrases like "The result?", "What do you think?" as the close, and too many em dashes. Up to three tries are made. If a small problem is still left, the draft is saved anyway, and the Notes column says what to fix.
 

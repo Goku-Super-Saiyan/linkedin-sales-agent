@@ -33,6 +33,10 @@ class Settings:
     linkedin_access_token: str | None = None
     linkedin_person_urn: str | None = None
     linkedin_token_expires_on: date | None = None
+    # The company page. Its token needs w_organization_social (Community Management API).
+    linkedin_org_urn: str | None = None
+    linkedin_org_access_token: str | None = None
+    linkedin_org_token_expires_on: date | None = None
     timezone: str = "Asia/Kolkata"
     extra: dict = field(default_factory=dict)
 
@@ -40,6 +44,7 @@ class Settings:
     def from_env(cls, env: dict | None = None) -> "Settings":
         env = os.environ if env is None else env
         expires = env.get("LINKEDIN_TOKEN_EXPIRES_ON") or None
+        org_expires = env.get("LINKEDIN_ORG_TOKEN_EXPIRES_ON") or None
         return cls(
             llm_provider=(env.get("LLM_PROVIDER") or "gemini").strip().lower(),
             llm_model=env.get("LLM_MODEL") or None,
@@ -51,11 +56,18 @@ class Settings:
             linkedin_access_token=env.get("LINKEDIN_ACCESS_TOKEN") or None,
             linkedin_person_urn=env.get("LINKEDIN_PERSON_URN") or None,
             linkedin_token_expires_on=date.fromisoformat(expires) if expires else None,
+            linkedin_org_urn=env.get("LINKEDIN_ORG_URN") or None,
+            linkedin_org_access_token=env.get("LINKEDIN_ORG_ACCESS_TOKEN") or None,
+            linkedin_org_token_expires_on=date.fromisoformat(org_expires) if org_expires else None,
         )
 
     @property
     def linkedin_configured(self) -> bool:
         return bool(self.linkedin_access_token and self.linkedin_person_urn)
+
+    @property
+    def company_configured(self) -> bool:
+        return bool(self.linkedin_org_access_token and self.linkedin_org_urn)
 
     def now(self) -> datetime:
         return datetime.now(ZoneInfo(self.timezone))
