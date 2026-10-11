@@ -24,7 +24,7 @@ voice:
     - Lead with one useful insight from the news, then a practical takeaway for business leaders.
     - Mention 360 Degree Cloud at most once, as a soft line near the end. No hard sell.
     - Never invent statistics, customer names, quotes or results. Only use facts from the source articles.
-    - 120 to 220 words. Short paragraphs. End with a question to invite comments.
+    - 150 to 230 words (about 900 to 1,300 characters). Short paragraphs. End with a specific question to invite comments.
     - 3 to 5 relevant hashtags on the last line. At most 2 emojis.
   example_posts:
     - >
@@ -74,6 +74,54 @@ content:
     - Where AI agents help customer service teams today, and where they don't yet
     - Questions to ask before starting a Salesforce integration project
     - How to measure whether your CRM is actually being used by the team
+
+  # Which kind of post each day gets. source: news (falls back to an evergreen topic when there's
+  # no fresh news) or evergreen. hooks: shapes to try, in order; one used in the last 6 days is
+  # skipped. Shapes: number_first, contrarian, false_binary, diverging_paths, explain_simply,
+  # checklist (described in agent/planner.py). topics: evergreen topics for that day; empty means
+  # the evergreen_topics list above.
+  weekly_plan:
+    monday:
+      pillar: Industry news
+      source: news
+      hooks: [number_first, contrarian]
+    tuesday:
+      pillar: Practical how-to
+      source: evergreen
+      hooks: [checklist, false_binary]
+      topics:
+        - Steps to check before starting a Salesforce implementation
+        - How to clean up CRM data before adding AI
+        - How to pick the first sales process to automate in Salesforce
+        - What to prepare before an AI agent pilot with your service team
+        - How to get a sales team to actually use the CRM
+    wednesday:
+      pillar: Industry news
+      source: news
+      hooks: [false_binary, diverging_paths, number_first]
+    thursday:
+      pillar: Explained simply
+      source: evergreen
+      hooks: [explain_simply]
+      topics:
+        - Agentforce
+        - Data Cloud
+        - CRM integration with MuleSoft
+        - Salesforce flows versus Apex code
+        - Retrieval-augmented generation (RAG) for business data
+        - CTI (computer telephony integration) in Salesforce
+    friday:
+      pillar: Point of view
+      source: news
+      hooks: [contrarian, diverging_paths]
+    saturday:
+      pillar: Practical how-to
+      source: evergreen
+      hooks: [checklist, explain_simply]
+    sunday:
+      pillar: Point of view
+      source: evergreen
+      hooks: [diverging_paths, false_binary]
 
 schedule:
   timezone: Asia/Kolkata

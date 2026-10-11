@@ -11,10 +11,16 @@ class FakeLLM:
 
     def __init__(self, *replies):
         self.replies = list(replies)
+        self.audit_replies = []
         self.prompts = []
 
     def generate_json(self, system, prompt, schema):
         self.prompts.append((system, prompt))
+        if "changes" in schema["properties"]:
+            # The audit pass: hand back a queued edit, or the draft unchanged.
+            if self.audit_replies:
+                return self.audit_replies.pop(0)
+            return {"post": prompt.split("<draft>\n", 1)[1].rsplit("\n</draft>", 1)[0], "changes": []}
         return self.replies.pop(0)
 
 
