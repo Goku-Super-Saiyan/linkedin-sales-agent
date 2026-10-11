@@ -72,7 +72,7 @@ LinkedIn sign-ins last about 60 days. A week before expiry, the agent adds a rem
 
 ### 5. Posting dashboard
 
-The dashboard is a web page that lives inside the Google Sheet. People sign in with a username and password. They can read and edit each draft, pick a date and time and click **Schedule**, click **Post now** or **Reject**, and write today's draft on demand. Every 5 minutes it checks for posts whose time has come and asks GitHub to publish them.
+The dashboard is a web page that lives inside the Google Sheet. People sign in with a username and password. They can read and edit each draft, pick a date and time and click **Schedule**, click **Post now** or **Reject**, and click **Write a new draft** to get another draft at any time. The automatic draft still comes once a day at 08:00 IST. Under **Settings** they set the default post time and the daily limit. Approved posts without their own time go into the next free slot. Every 5 minutes it checks for posts whose time has come and asks GitHub to publish them.
 
 1. **Make a GitHub token.** On GitHub, open **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**. Under **Repository access**, choose only this repository. Under **Permissions**, set **Actions** to **Read and write**. Copy the token.
 2. **Add the code.** In the Google Sheet, open **Extensions → Apps Script**.
@@ -90,7 +90,9 @@ The dashboard is a web page that lives inside the Google Sheet. People sign in w
 
 The username and password are the only lock on the page, so use a strong password. After 5 wrong passwords, a username is locked for 15 minutes. Sessions last 6 hours. Removing a login signs that person out at once. Passwords are stored as salted hashes, never as plain text. If you change the code later, use **Deploy → Manage deployments → Edit → New version** so the same URL keeps working.
 
-The **Post at** time is IST. If it's left empty, an approved post goes out within 5 minutes. The hourly GitHub run (13:15–19:15 IST) stays on as a backup, and the one-post-a-day limit still applies.
+The **Post at** time is IST. If it's left empty, the post takes the next free slot at the default time, or goes out right away if no default time is set. If the daily limit is already used, the post moves to the next day. Settings are saved in a **Settings** tab in the sheet, and the agent reads them too. Until someone saves them, the defaults come from `schedule` in `config/company.yaml` (10:00, one post a day). The hourly GitHub run (13:15–19:15 IST) stays on as a backup.
+
+**Updating the dashboard code:** paste the new `Code.gs` and `Dashboard.html` into Apps Script and save. Then go to **Deploy → Manage deployments**, click the pencil, choose **New version** and click **Deploy**. The link stays the same.
 
 ### Switching to a paid AI model (optional)
 

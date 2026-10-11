@@ -1,6 +1,7 @@
 """Command line entry point.
 
     python -m agent draft      # research news and add today's draft to the sheet
+    python -m agent new-draft  # add another draft now, even if today's exists
     python -m agent publish    # publish rows marked Approved
 """
 
@@ -18,7 +19,7 @@ from .store import get_store
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agent")
-    parser.add_argument("command", choices=["draft", "publish"])
+    parser.add_argument("command", choices=["draft", "new-draft", "publish"])
     parser.add_argument("--profile", help="Path to company.yaml (default: config/company.yaml)")
     args = parser.parse_args(argv)
 
@@ -28,8 +29,9 @@ def main(argv: list[str] | None = None) -> int:
     settings.timezone = profile["schedule"]["timezone"]
     store = get_store(settings)
 
-    if args.command == "draft":
-        row = draft_daily_post(settings, profile, store, get_llm(settings))
+    if args.command in ("draft", "new-draft"):
+        manual = args.command == "new-draft"
+        row = draft_daily_post(settings, profile, store, get_llm(settings), manual=manual)
         if row:
             print(f"\nDraft saved for review ({row.topic}):\n\n{row.text}\n")
     else:

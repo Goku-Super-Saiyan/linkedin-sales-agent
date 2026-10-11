@@ -1,13 +1,14 @@
 """Workflow 1: research news, draft a post for review, publish it once approved.
 
-draft_daily_post  runs each morning and adds one "Pending review" row to the sheet.
+draft_daily_post  runs each morning and adds one "Pending review" row to the sheet. With
+                  manual=True (the dashboard's "Write a new draft") it always adds one more.
 publish_approved  publishes rows she marked "Approved" once their "Post at" time has come.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import Callable
 
 from . import feeds, linkedin
@@ -42,6 +43,23 @@ def parse_post_at(value: str, now: datetime) -> datetime | None:
         except ValueError:
             continue
     raise ValueError(value)
+
+
+def schedule_settings(profile: dict, store: Store) -> tuple[time | None, int]:
+    """Default post time and daily limit: the dashboard's Settings tab wins over company.yaml."""
+    schedule = profile["schedule"]
+    saved = store.get_settings()
+    raw_time = saved.get("default_post_time", schedule.get("default_post_time") or "").strip()
+    try:
+        default_time = datetime.strptime(raw_time, "%H:%M").time() if raw_time else None
+    except ValueError:
+        log.warning("Ignoring default post time %r; expected HH:MM.", raw_time)
+        default_time = None
+    try:
+        limit = max(1, int(saved.get("max_posts_per_day") or schedule["max_posts_per_day"]))
+    except ValueError:
+        limit = schedule["max_posts_per_day"]
+    return default_time, limit
 
 
 def _used_urls(posts: list[PostRow]) -> set[str]:
@@ -80,12 +98,14 @@ def draft_daily_post(
     llm: LLM,
     fetch: Callable[[list[str]], list[feeds.NewsItem]] = feeds.collect,
     now: datetime | None = None,
+    manual: bool = False,
 ) -> PostRow | None:
     now = now or settings.now()
     today = now.date().isoformat()
     posts = store.list_posts()
-    if any(p.date == today for p in posts):
-        log.info("A draft for %s already exists; nothing to do.", today)
+    daily_id = f"{today}-post"
+    if not manual and any(p.id == daily_id for p in posts):
+        log.info("Today's draft %s already exists; nothing to do.", daily_id)
         return None
 
     content = profile["content"]
@@ -101,7 +121,7 @@ def draft_daily_post(
     draft = write_post(llm, profile, items, evergreen_topic=_evergreen_topic(profile, posts, now))
 
     row = PostRow(
-        id=f"{today}-post",
+        id=f"{today}-post-{now:%H%M%S}" if manual else daily_id,
         date=today,
         status=PENDING,
         topic=draft.topic,
@@ -155,12 +175,18 @@ def publish_approved(
             )
         return []
 
-    limit = profile["schedule"]["max_posts_per_day"]
+    default_time, limit = schedule_settings(profile, store)
     already = sum(1 for p in posts if p.is_status(PUBLISHED) and p.published_at.startswith(today))
     published: list[str] = []
     for p in approved:
         if already + len(published) >= limit:
-            store.update_post(p.id, notes="Approved. Waiting for tomorrow (one post per day).")
+            # Move it to tomorrow, or it would go out just after midnight.
+            tomorrow = datetime.combine(now.date() + timedelta(days=1), default_time or now.time())
+            store.update_post(
+                p.id,
+                post_at=tomorrow.strftime("%Y-%m-%d %H:%M"),
+                notes=f"Today's limit of {limit} post(s) was reached, so this moved to tomorrow.",
+            )
             continue
         if not p.text.strip():
             store.update_post(p.id, status=FAILED, notes="The post text is empty.")

@@ -15,7 +15,9 @@ const REPO = 'Goku-Super-Saiyan/linkedin-sales-agent';
 const WORKFLOW = 'daily-post.yml';
 const TAB = 'Posts';
 const TZ = 'Asia/Kolkata';
-const MAX_POSTS_PER_DAY = 1; // Keep in step with schedule.max_posts_per_day in config/company.yaml.
+const SETTINGS_TAB = 'Settings';
+// Used until someone saves the Settings panel. Same defaults as config/company.yaml.
+const DEFAULT_SETTINGS = { defaultTime: '10:00', maxPerDay: 1 };
 const DISPATCH_GAP_MS = 4 * 60 * 1000;
 const SESSION_SECONDS = 6 * 60 * 60; // The longest CacheService keeps anything.
 const MAX_FAILED_LOGINS = 5; // Per username, per 15 minutes.
@@ -121,22 +123,15 @@ function logout(token) {
 
 function getPosts(token) {
   const username = user_(token);
-  const sheet = sheet_();
-  const values = sheet.getDataRange().getDisplayValues();
-  const headers = values.shift();
-  const key = { 'ID': 'id', 'Date': 'date', 'Status': 'status', 'Topic': 'topic',
-    'Post text': 'text', 'Sources': 'sources', 'Notes': 'notes', 'LinkedIn link': 'link',
-    'Published at': 'publishedAt', 'Post at': 'postAt' };
-  const posts = values
-    .filter((row) => row[0])
-    .map((row) => {
-      const post = {};
-      headers.forEach((h, i) => { if (key[h]) post[key[h]] = row[i]; });
-      return post;
-    })
+  const settings = settings_();
+  const posts = rows_()
+    .map((r) => ({ id: r.ID, date: r.Date, status: r.Status, topic: r.Topic, text: r['Post text'],
+      sources: r.Sources, notes: r.Notes, link: r['LinkedIn link'], publishedAt: r['Published at'],
+      postAt: r['Post at'] }))
     .reverse()
     .slice(0, 60);
-  return { posts: posts, now: now_(), maxPerDay: MAX_POSTS_PER_DAY, username: username };
+  return { posts: posts, now: now_(), settings: settings, nextSlot: nextSlot_(rows_(), settings, ''),
+    username: username };
 }
 
 function savePost(token, id, text, postAt) {
@@ -144,10 +139,13 @@ function savePost(token, id, text, postAt) {
   update_(id, { 'Post text': text, 'Post at': clean_(postAt) });
 }
 
+// Returns the time it was scheduled for ('' means right away).
 function schedulePost(token, id, text, postAt) {
   user_(token);
-  update_(id, { 'Post text': text, 'Post at': clean_(postAt), 'Status': 'Approved', 'Notes': '' });
-  if (!clean_(postAt) || clean_(postAt) <= now_()) dispatch_('publish');
+  const when = clean_(postAt) || nextSlot_(rows_(), settings_(), id);
+  update_(id, { 'Post text': text, 'Post at': when, 'Status': 'Approved', 'Notes': '' });
+  if (!when || when <= now_()) dispatch_('publish');
+  return when;
 }
 
 function postNow(token, id, text) {
@@ -162,33 +160,106 @@ function setStatus(token, id, status) {
   update_(id, { 'Status': status });
 }
 
+// Always writes one more draft, even if today's daily draft exists.
 function draftNow(token) {
   user_(token);
   sheet_();
-  dispatch_('draft');
+  dispatch_('new-draft');
+}
+
+// Saves the default post time and daily limit. With applyToAll, every scheduled post that
+// hasn't gone out yet is moved onto the new times, earliest first.
+function saveSettings(token, defaultTime, maxPerDay, applyToAll) {
+  user_(token);
+  const time = String(defaultTime || '').trim();
+  if (time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error('Pick a valid time.');
+  const max = Number(maxPerDay);
+  if (!(max >= 1 && max <= 5)) throw new Error('Posts per day must be between 1 and 5.');
+  const ss = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
+  const tab = ss.getSheetByName(SETTINGS_TAB) || ss.insertSheet(SETTINGS_TAB);
+  tab.getRange(1, 1, 3, 2).setNumberFormat('@').setValues([
+    ['Setting', 'Value'], ['default_post_time', time], ['max_posts_per_day', String(max)]]);
+  SpreadsheetApp.flush();
+  let moved = 0;
+  if (applyToAll) {
+    const settings = settings_();
+    const rows = rows_();
+    const now = now_();
+    const toMove = rows
+      .filter((r) => r.Status === 'Approved' && (!r['Post at'] || r['Post at'] > now))
+      .sort((a, b) => (a['Post at'] || '').localeCompare(b['Post at'] || ''));
+    toMove.forEach((r) => { r['Post at'] = ''; }); // Free their old slots before reassigning.
+    toMove.forEach((r) => {
+      r['Post at'] = nextSlot_(rows, settings, r.ID);
+      update_(r.ID, { 'Post at': r['Post at'] });
+      moved++;
+    });
+  }
+  return { settings: settings_(), moved: moved };
 }
 
 // ---- Every 5 minutes ----
 
 function checkDue() {
-  const sheet = sheet_();
-  const values = sheet.getDataRange().getDisplayValues();
-  const headers = values.shift();
-  const status = headers.indexOf('Status');
-  const postAt = headers.indexOf('Post at');
-  const publishedAt = headers.indexOf('Published at');
+  const rows = rows_();
   const now = now_();
   const today = now.slice(0, 10);
-  const postedToday = values.filter((r) => r[status] === 'Published' && r[publishedAt].startsWith(today)).length;
-  if (postedToday >= MAX_POSTS_PER_DAY) return;
-  const due = values.some((r) => r[status].trim().toLowerCase() === 'approved'
-    && (!r[postAt] || r[postAt].replace('T', ' ') <= now));
+  const postedToday = rows.filter((r) => r.Status === 'Published' && r['Published at'].startsWith(today)).length;
+  if (postedToday >= settings_().maxPerDay) return;
+  const due = rows.some((r) => r.Status.trim().toLowerCase() === 'approved'
+    && (!r['Post at'] || r['Post at'].replace('T', ' ') <= now));
   const last = Number(PropertiesService.getScriptProperties().getProperty('LAST_DISPATCH') || 0);
   // Give the last run time to finish before asking again.
   if (due && Date.now() - last > DISPATCH_GAP_MS) dispatch_('publish');
 }
 
 // ---- Helpers ----
+
+// Posts tab rows as objects keyed by header, oldest first.
+function rows_() {
+  const values = sheet_().getDataRange().getDisplayValues();
+  const headers = values.shift();
+  return values.filter((row) => row[0]).map((row) => {
+    const r = {};
+    headers.forEach((h, i) => { r[h] = row[i]; });
+    r['Post at'] = (r['Post at'] || '').replace('T', ' ');
+    r['Published at'] = r['Published at'] || '';
+    return r;
+  });
+}
+
+function settings_() {
+  const ss = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
+  const tab = ss.getSheetByName(SETTINGS_TAB);
+  const saved = {};
+  if (tab) tab.getDataRange().getDisplayValues().forEach((r) => { saved[r[0]] = r[1]; });
+  return {
+    defaultTime: 'default_post_time' in saved ? saved.default_post_time : DEFAULT_SETTINGS.defaultTime,
+    maxPerDay: Number(saved.max_posts_per_day) || DEFAULT_SETTINGS.maxPerDay,
+  };
+}
+
+// The next default-time slot with room left under the daily limit, or '' for "right away"
+// when no default time is set. Posts already published or scheduled fill the slots.
+function nextSlot_(rows, settings, ignoreId) {
+  if (!settings.defaultTime) return '';
+  const busy = {};
+  rows.forEach((r) => {
+    if (r.ID === ignoreId) return;
+    const day = r.Status === 'Published' ? r['Published at'].slice(0, 10)
+      : (r.Status === 'Approved' || r.Status === 'Publishing') && r['Post at'] ? r['Post at'].slice(0, 10) : '';
+    if (day) busy[day] = (busy[day] || 0) + 1;
+  });
+  const now = now_();
+  const day = new Date(now.slice(0, 10) + 'T12:00:00Z');
+  if (now.slice(0, 10) + ' ' + settings.defaultTime <= now) day.setUTCDate(day.getUTCDate() + 1);
+  for (let i = 0; i < 366; i++) {
+    const key = Utilities.formatDate(day, 'UTC', 'yyyy-MM-dd');
+    if ((busy[key] || 0) < settings.maxPerDay) return key + ' ' + settings.defaultTime;
+    day.setUTCDate(day.getUTCDate() + 1);
+  }
+  return '';
+}
 
 function user_(token) {
   const name = token && CacheService.getScriptCache().get('session_' + token);

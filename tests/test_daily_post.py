@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from agent import linkedin
@@ -158,3 +158,43 @@ def test_publish_explains_unreadable_post_at(settings, profile, store):
     row = store.list_posts()[0]
     assert row.status == APPROVED
     assert "Couldn't read Post at" in row.notes
+
+
+def test_manual_draft_adds_another_one(settings, profile, store):
+    draft_daily_post(settings, profile, store, FakeLLM(reply()), fetch=lambda _: [news()], now=NOW)
+    extra = draft_daily_post(
+        settings, profile, store, FakeLLM(reply("https://ex.com/b")),
+        fetch=lambda _: [news("https://ex.com/b")], now=NOW, manual=True,
+    )
+    assert extra.id == "2026-10-11-post-080000"
+    assert len(store.list_posts()) == 2
+
+
+def test_daily_draft_still_runs_after_a_manual_one(settings, profile, store):
+    draft_daily_post(settings, profile, store, FakeLLM(reply()), fetch=lambda _: [news()], now=NOW, manual=True)
+    daily = draft_daily_post(
+        settings, profile, store, FakeLLM(reply("https://ex.com/b")), fetch=lambda _: [news("https://ex.com/b")], now=NOW
+    )
+    assert daily.id == "2026-10-11-post"
+
+
+def test_dashboard_settings_override_company_yaml(profile, tmp_path):
+    from agent.daily_post import schedule_settings
+    from agent.store import LocalStore
+
+    assert schedule_settings(profile, LocalStore(tmp_path / "a.json")) == (time(10, 0), 1)
+    saved = LocalStore(tmp_path / "b.json", {"default_post_time": "18:30", "max_posts_per_day": "2"})
+    assert schedule_settings(profile, saved) == (time(18, 30), 2)
+
+
+def test_over_limit_moves_to_tomorrow_at_default_time(settings, profile, tmp_path):
+    from agent.store import LocalStore
+
+    store = LocalStore(tmp_path / "p.json", {"default_post_time": "09:15"})
+    store.add_post(approved("one", "2026-10-10"))
+    store.add_post(approved("two", "2026-10-11"))
+    publish_approved(settings, profile, store, publish=lambda *a: "urn:li:share:9", now=NOW)
+    two = {r.id: r for r in store.list_posts()}["two"]
+    assert two.status == APPROVED
+    assert two.post_at == "2026-10-12 09:15"
+    assert "tomorrow" in two.notes
