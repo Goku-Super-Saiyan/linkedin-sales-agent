@@ -105,6 +105,25 @@ To pin a specific model, set the variable `LLM_MODEL`.
 
 ## Changing what it writes about
 
+**Weekly plan.** Each day of the week gets a kind of post and a hook shape, set under `content.weekly_plan`:
+
+| Day | Post | Uses news? |
+|---|---|---|
+| Monday | Industry news | Yes |
+| Tuesday | Practical how-to (checklist) | No |
+| Wednesday | Industry news | Yes |
+| Thursday | A Salesforce or AI term, explained simply | No |
+| Friday | Point of view | Yes |
+| Saturday | Practical how-to | No |
+| Sunday | Point of view | No |
+
+A news day with no fresh news falls back to an evergreen topic. A hook shape isn't used twice within 6 days. The Notes column says which day's plan and hook each draft used.
+
+**Sounding like a person.** After the first draft, the AI edits it once against a checklist: strongest point in line 1, a specific behind every claim, no "Short. Punchy. Done." stacks, no "Let me be honest", and a closing question about the reader's own work. Then every draft is checked for tells: a question as the first line, words like "leverage" or "seamless", reveal phrases like "The result?", "What do you think?" as the close, and too many em dashes. Up to three tries are made. If a small problem is still left, the draft is saved anyway, and the Notes column says what to fix.
+
+The plan, hook shapes and writing rules are adapted from [linkedin-skills](https://github.com/sergebulaev/linkedin-skills) (MIT licence). They live in `agent/planner.py` and `agent/style.py`.
+
+
 Edit [`config/company.yaml`](config/company.yaml). It holds the company description, tone, topics to avoid, keywords, news feeds and fallback topics.
 
 ## Development

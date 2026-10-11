@@ -15,6 +15,7 @@ from . import feeds, linkedin
 from .config import Settings
 from .content import write_post
 from .llm import LLM
+from .planner import PostPlan, plan_for
 from .store import (
     APPROVED,
     FAILED,
@@ -69,17 +70,9 @@ def _used_urls(posts: list[PostRow]) -> set[str]:
     return urls
 
 
-def _evergreen_topic(profile: dict, posts: list[PostRow], today: datetime) -> str:
-    topics = profile["content"]["evergreen_topics"]
-    used = {p.topic for p in posts}
-    unused = [t for t in topics if t not in used]
-    pool = unused or topics
-    return pool[today.toordinal() % len(pool)]
-
-
-def _notes(settings: Settings, evergreen: bool, today: datetime) -> str:
+def _notes(settings: Settings, plan: PostPlan, evergreen: bool, today: datetime) -> str:
     notes = []
-    if evergreen:
+    if evergreen and plan.news_day:
         notes.append("No fresh Salesforce/AI news found, so this is an evergreen topic.")
     if not settings.linkedin_configured:
         notes.append("LinkedIn isn't connected yet: once you approve, copy the text and post it yourself.")
@@ -109,7 +102,9 @@ def draft_daily_post(
         return None
 
     content = profile["content"]
-    items = feeds.rank(
+    plan = plan_for(profile, posts, now)
+    log.info("Plan for today: %s", plan.note())
+    items = [] if not plan.use_news else feeds.rank(
         fetch(content["feeds"]),
         keywords=content["keywords"],
         max_age_days=content["max_age_days"],
@@ -118,7 +113,9 @@ def draft_daily_post(
         now=now,
     )
     log.info("Found %d usable news items.", len(items))
-    draft = write_post(llm, profile, items, evergreen_topic=_evergreen_topic(profile, posts, now))
+    if not items:
+        plan.use_news = False
+    draft = write_post(llm, profile, items, plan=plan)
 
     row = PostRow(
         id=f"{today}-post-{now:%H%M%S}" if manual else daily_id,
@@ -127,7 +124,9 @@ def draft_daily_post(
         topic=draft.topic,
         text=draft.post,
         sources="\n".join(draft.source_urls),
-        notes=_notes(settings, draft.evergreen, now),
+        notes=" ".join(
+            filter(None, [plan.note(), _notes(settings, plan, draft.evergreen, now), *draft.style_warnings])
+        ),
     )
     store.add_post(row)
     log.info("Saved draft %s for review: %s", row.id, row.topic)

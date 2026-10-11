@@ -1,7 +1,9 @@
+import pytest
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from agent import linkedin
+from agent.config import load_profile
 from agent.daily_post import draft_daily_post, publish_approved
 from agent.feeds import NewsItem
 from agent.store import (
@@ -20,6 +22,15 @@ NOW = datetime(2026, 10, 11, 8, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
 
 def news(url="https://ex.com/a"):
     return NewsItem("Salesforce Agentforce news", url, "CRM", NOW.astimezone(timezone.utc) - timedelta(hours=5), "src")
+
+
+@pytest.fixture
+def profile():
+    """The real profile, with every day set to news so these tests don't depend on the weekday."""
+    profile = load_profile()
+    for day in profile["content"]["weekly_plan"].values():
+        day["source"] = "news"
+    return profile
 
 
 def reply(url="https://ex.com/a"):
@@ -46,6 +57,24 @@ def test_draft_skips_articles_already_used(settings, profile, store):
     llm = FakeLLM({"topic": "CRM", "source_urls": [], "post": good_post()})
     row = draft_daily_post(settings, profile, store, llm, fetch=lambda _: [news()], now=NOW)
     assert "evergreen" in row.notes
+
+
+def test_draft_records_the_plan_in_notes(settings, profile, store):
+    row = draft_daily_post(settings, profile, store, FakeLLM(reply()), fetch=lambda _: [news()], now=NOW)
+    assert row.notes.startswith("Plan: Sunday, Point of view. Hook: Two paths over time.")
+
+
+def test_evergreen_day_ignores_news(settings, store):
+    profile = load_profile()  # Sunday is an evergreen day in the real plan.
+    fetched = []
+    llm = FakeLLM({"topic": "CRM", "source_urls": [], "post": good_post()})
+    row = draft_daily_post(
+        settings, profile, store, llm, fetch=lambda f: fetched.append(f) or [news()], now=NOW
+    )
+    assert fetched == []
+    assert row.sources == ""
+    assert "evergreen topic" in llm.prompts[0][1] and "Two paths over time" in llm.prompts[0][1]
+    assert "No fresh" not in row.notes
 
 
 def test_draft_notes_when_linkedin_not_connected(profile, store):
