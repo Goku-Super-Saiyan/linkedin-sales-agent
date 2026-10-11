@@ -183,6 +183,7 @@
       <div class="choices">
         <button class="btn primary block" data-account="profile">For her profile</button>
         <button class="btn block" data-account="company">For the company page</button>
+        <button class="btn block" data-account="both">For both (one draft each)</button>
       </div>
       <div class="actions"><button type="button" class="btn quiet" id="draftCancel">Cancel</button></div>
     </div>
@@ -518,7 +519,8 @@
       btn.disabled = true;
       document.getElementById('draftView').hidden = true;
       call('draftNow', [account], function () {
-        toast('Writing a new draft for ' + (account === 'company' ? 'the company page' : 'her profile') + '. Refresh in about a minute.');
+        const who = { company: 'a new draft for the company page', both: 'a draft for her profile and one for the company page' }[account] || 'a new draft for her profile';
+        toast('Writing ' + who + '. Refresh in about a minute.');
         btn.disabled = false;
       }, function (msg) { fail(msg); btn.disabled = false; });
     }

@@ -1,7 +1,7 @@
 """Command line entry point.
 
     python -m agent draft                       # add today's drafts (her profile, and the company page if on)
-    python -m agent new-draft [--account company]  # add another draft now, even if today's exists
+    python -m agent new-draft [--account company|both]  # add another draft now, even if today's exists
     python -m agent publish                     # publish rows marked Approved
 """
 
@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("command", choices=["draft", "new-draft", "publish"])
     parser.add_argument("--profile", help="Path to company.yaml (default: config/company.yaml)")
     parser.add_argument(
-        "--account", choices=["profile", "company"], default="profile", help="Who new-draft writes for"
+        "--account", choices=["profile", "company", "both"], default="profile", help="Who new-draft writes for"
     )
     args = parser.parse_args(argv)
 
@@ -35,7 +35,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in ("draft", "new-draft"):
         llm = get_llm(settings)
         if args.command == "new-draft":
-            targets, manual = [COMPANY if args.account == "company" else PROFILE], True
+            chosen = {"profile": [PROFILE], "company": [COMPANY], "both": [PROFILE, COMPANY]}
+            targets, manual = chosen[args.account], True
         else:
             targets, manual = accounts(profile, store), False
         for account in targets:

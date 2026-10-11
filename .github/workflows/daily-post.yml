@@ -16,7 +16,7 @@ on:
       account:
         description: Who new-draft writes for
         type: choice
-        options: [profile, company]
+        options: [profile, company, both]
         default: profile
 
 concurrency:

@@ -166,11 +166,11 @@ function setStatus(token, id, status) {
   update_(id, { 'Status': status });
 }
 
-// Always writes one more draft for the account ('profile' or 'company'), even if today's exists.
+// Always writes one more draft for the account ('profile', 'company' or 'both'), even if today's exists.
 function draftNow(token, account) {
   user_(token);
   sheet_();
-  dispatch_('new-draft', account === 'company' ? 'company' : 'profile');
+  dispatch_('new-draft', ['company', 'both'].indexOf(account) >= 0 ? account : 'profile');
 }
 
 // Saves the default post time and daily limit. With applyToAll, every scheduled post that
