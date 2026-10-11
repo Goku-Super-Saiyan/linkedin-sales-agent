@@ -1,0 +1,44 @@
+name: Daily LinkedIn post
+
+on:
+  schedule:
+    # 08:00 IST: research news and add today's draft to the sheet.
+    - cron: "30 2 * * *"
+    # Hourly 13:15-19:15 IST: publish anything she approved.
+    - cron: "45 7-13 * * *"
+  workflow_dispatch:
+    inputs:
+      command:
+        description: What to run
+        type: choice
+        options: [draft, publish]
+        default: draft
+
+concurrency:
+  group: daily-post
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run agent
+        env:
+          COMMAND: ${{ github.event_name == 'workflow_dispatch' && inputs.command || (github.event.schedule == '30 2 * * *' && 'draft' || 'publish') }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'gemini' }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_PERSON_URN: ${{ secrets.LINKEDIN_PERSON_URN }}
+          LINKEDIN_TOKEN_EXPIRES_ON: ${{ secrets.LINKEDIN_TOKEN_EXPIRES_ON }}
+        run: python -m agent "$COMMAND"
